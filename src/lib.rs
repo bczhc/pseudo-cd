@@ -49,13 +49,18 @@ fn execute_command_with_output(cmd: &[&str]) -> io::Result<String> {
     let output = Command::new(cmd[0])
         .args(cmd.iter().skip(1))
         .stdout(Stdio::piped())
+        .stderr(Stdio::null()) /* suppress stderr output */
         .spawn()?
         .wait_with_output()?;
     Ok(String::from_utf8(output.stdout).expect("Invalid UTF-8 met"))
 }
 
 fn cdrskin_medium_info_string() -> io::Result<String> {
-    execute_command_with_output(&["cdrskin", "-minfo"])
+    execute_command_with_output(&[
+        "cdrskin",
+        &format!("dev={}", mutex_lock!(ARGS).drive.display()),
+        "-minfo",
+    ])
 }
 
 pub fn cdrskin_medium_track_info() -> io::Result<Vec<Track>> {
