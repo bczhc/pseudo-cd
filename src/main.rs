@@ -13,6 +13,7 @@ use ratatui::{
     prelude::*,
     widgets::*,
 };
+use ratatui::crossterm::event::KeyModifiers;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
@@ -22,8 +23,7 @@ fn register_signal_hooks() {
     let mut signals = Signals::new([SIGINT, SIGTERM]).unwrap();
     #[allow(clippy::never_loop)]
     for _signal in &mut signals {
-        let _ = stop_tui();
-        exit(0);
+        clean_up_and_exit();
     }
 }
 
@@ -31,6 +31,11 @@ fn stop_tui() -> io::Result<()> {
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
     Ok(())
+}
+
+fn clean_up_and_exit() {
+    let _ = stop_tui();
+    exit(0);
 }
 
 fn start_tui() -> anyhow::Result<()> {
@@ -71,6 +76,10 @@ fn main() -> anyhow::Result<()> {
 fn handle_events() -> io::Result<bool> {
     if event::poll(std::time::Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                // Ctrl-C pressed
+                clean_up_and_exit();
+            }
             if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
                 return Ok(true);
             }
