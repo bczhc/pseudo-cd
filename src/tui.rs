@@ -1,4 +1,3 @@
-use std::cell::{Cell, RefCell};
 use std::io;
 use std::io::stdout;
 use std::process::exit;
@@ -79,11 +78,9 @@ impl Default for UiData {
         Self {
             ui_state: AppUiState::Starting,
             starting_ui_data: StartingUiData {
-                info_text: "Initializing...".into()
+                info_text: "Initializing...".into(),
             },
-            player_ui_data: PlayerUiData {
-
-            }
+            player_ui_data: PlayerUiData {},
         }
     }
 }
@@ -146,15 +143,16 @@ impl<B: Backend> Tui<B> {
 
         mutex_lock!(ui_data).starting_ui_data.info_text = "Haha! Une loup!".into();
     }
-    
+
     pub fn tick(&mut self) -> io::Result<()> {
         if !self.bg_thread_started {
+            self.bg_thread_started = true;
             let arc = Arc::clone(&self.ui_data);
             spawn(move || {
                 Self::background_thread(arc);
             });
         }
-        
+
         self.terminal.draw(|frame| {
             mutex_lock!(self.ui_data).draw_to(frame);
         })?;
