@@ -2,29 +2,64 @@ use std::io;
 use std::io::stdout;
 use std::process::exit;
 
-use ratatui::{Frame, Terminal};
 use ratatui::backend::Backend;
-use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::widgets::{Block, Padding, Paragraph};
+use ratatui::{Frame, Terminal};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 enum AppUiState {
     /// Shows a starting centered text, indicating initialization
-    Starting,
-    Player,
+    Starting(StartingUiData),
+    Player(PlayerUiData),
 }
 
 pub struct Tui<B: Backend> {
     terminal: Terminal<B>,
     should_quit: bool,
     ui_data: UiData,
+}
+
+#[derive(Clone, Debug)]
+struct StartingUiData {
+    info_text: String,
+}
+
+impl StartingUiData {
+    fn draw_to(&self, frame: &mut Frame, rect: Rect) {
+        let padding = Padding::new(
+            0,
+            0,
+            (rect.height - 1/* the center text takes up one line */) / 2,
+            0,
+        );
+
+        frame.render_widget(
+            Paragraph::new(&*self.info_text)
+                .block(
+                    Block::bordered()
+                        .title(TUI_APP_TITLE)
+                        .title_alignment(Alignment::Center)
+                        .padding(padding),
+                )
+                .alignment(Alignment::Center),
+            frame.size(),
+        );
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PlayerUiData {}
+
+impl PlayerUiData {
+    fn draw_to(&self, frame: &mut Frame, rect: Rect) {}
 }
 
 pub struct UiData {
@@ -34,7 +69,9 @@ pub struct UiData {
 impl Default for UiData {
     fn default() -> Self {
         Self {
-            ui_state: AppUiState::Starting,
+            ui_state: AppUiState::Starting(StartingUiData {
+                info_text: "Checking cdrskin...".into(),
+            }),
         }
     }
 }
@@ -50,39 +87,14 @@ impl UiData {
         let frame_rect = frame.size();
         let app_block_inner_rect = Rect::new(1, 1, frame_rect.width - 2, frame_rect.height - 2);
 
-        match self.ui_state {
-            AppUiState::Starting => {
-                self.ui_starting(frame, app_block_inner_rect);
+        match &self.ui_state {
+            AppUiState::Starting(d) => {
+                d.draw_to(frame, app_block_inner_rect);
             }
-            AppUiState::Player => {
-                self.ui_player(frame, app_block_inner_rect);
+            AppUiState::Player(d) => {
+                d.draw_to(frame, app_block_inner_rect);
             }
         }
-    }
-
-    fn ui_starting(&self, frame: &mut Frame, rect: Rect) {
-        let padding = Padding::new(
-            0,
-            0,
-            (rect.height - 1/* the center text takes up one line */) / 2,
-            0,
-        );
-
-        frame.render_widget(
-            Paragraph::new("Test")
-                .block(
-                    Block::bordered()
-                        .title(TUI_APP_TITLE)
-                        .title_alignment(Alignment::Center)
-                        .padding(padding),
-                )
-                .alignment(Alignment::Center),
-            frame.size(),
-        );
-    }
-
-    fn ui_player(&self, frame: &mut Frame, rect: Rect) {
-        
     }
 }
 
