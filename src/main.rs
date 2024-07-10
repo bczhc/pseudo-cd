@@ -1,25 +1,84 @@
 #![feature(yeet_expr)]
 
-use anyhow::anyhow;
-use clap::Parser;
-use yeet_ops::yeet;
+use std::io::{self, stdout};
 
-use pseudo_cd::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock};
-use pseudo_cd::cli::{ARGS, Args};
+use ratatui::{
+    crossterm::{
+        event::{self, Event, KeyCode},
+        ExecutableCommand,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    },
+    prelude::*,
+    widgets::*,
+};
 
-fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-    *mutex_lock!(ARGS) = args;
+fn start_tui() -> anyhow::Result<()> {
+    enable_raw_mode()?;
+    stdout().execute(EnterAlternateScreen)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    let cdrskin_version = check_cdrskin_version();
-    if cdrskin_version.is_err() || cdrskin_version.unwrap().is_none() {
-        yeet!(anyhow!("cdrskin is needed"));
+    let mut should_quit = false;
+    while !should_quit {
+        terminal.draw(ui)?;
+        should_quit = handle_events()?;
     }
 
-    let tracks = cdrskin_medium_track_info()?;
-    let meta_info_track =
-        &tracks[mutex_lock!(ARGS).meta_info_track - 1 /* track numbers start from 1 */];
-    println!("{:?}", extract_meta_info(meta_info_track));
+    disable_raw_mode()?;
+    stdout().execute(LeaveAlternateScreen)?;
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    start_tui()?;
+
+    // let args = Args::parse();
+    // *mutex_lock!(ARGS) = args;
+    //
+    // let cdrskin_version = check_cdrskin_version();
+    // if cdrskin_version.is_err() || cdrskin_version.unwrap().is_none() {
+    //     yeet!(anyhow!("cdrskin is needed"));
+    // }
+
+    // let tracks = cdrskin_medium_track_info()?;
+    // let meta_info_track =
+    //     &tracks[mutex_lock!(ARGS).meta_info_track - 1 /* track numbers start from 1 */];
+    // println!("{:?}", extract_meta_info(meta_info_track));
 
     Ok(())
+}
+
+/// Returns `true` if the TUI app is time to quit
+fn handle_events() -> io::Result<bool> {
+    if event::poll(std::time::Duration::from_millis(50))? {
+        if let Event::Key(key) = event::read()? {
+            if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn ui(frame: &mut Frame) {
+    let frame_rect = frame.size();
+    let app_block_inner_rect = Rect::new(1, 1, frame_rect.width - 2, frame_rect.height - 2);
+
+    let padding = Padding::new(
+        0,
+        0,
+        (app_block_inner_rect.height - 1/* the center text takes up one line */) / 2,
+        0,
+    );
+
+    frame.render_widget(
+        Paragraph::new("Test")
+            .block(
+                Block::bordered()
+                    .title("Pseudo-CD player")
+                    .title_alignment(Alignment::Center)
+                    .padding(padding),
+            )
+            .alignment(Alignment::Center),
+        frame.size(),
+    );
 }
