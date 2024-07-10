@@ -14,7 +14,7 @@ use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::widgets::{Block, Padding, Paragraph};
 use ratatui::{Frame, Terminal};
-use crate::mutex_lock;
+use crate::{cdrskin_medium_track_info, check_cdrskin_version, mutex_lock};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
@@ -71,6 +71,7 @@ pub struct UiData {
     ui_state: AppUiState,
     starting_ui_data: StartingUiData,
     player_ui_data: PlayerUiData,
+    any_key_to_exit: bool,
 }
 
 impl Default for UiData {
@@ -81,6 +82,7 @@ impl Default for UiData {
                 info_text: "Initializing...".into(),
             },
             player_ui_data: PlayerUiData {},
+            any_key_to_exit: false,
         }
     }
 }
@@ -137,11 +139,26 @@ impl<B: Backend> Tui<B> {
     }
 
     fn background_thread(ui_data: Arc<Mutex<UiData>>) {
-        mutex_lock!(ui_data).starting_ui_data.info_text = "Wait for text change....".into();
+        mutex_lock!(ui_data).starting_ui_data.info_text = "Checking cdrskin...".into();
 
-        sleep(Duration::from_secs(2));
+        let version = check_cdrskin_version();
+        let version = match version {
+            Err(_) | Ok(None) => {
+                mutex_lock!(ui_data).starting_ui_data.info_text = "cdrskin not found! Press any key to exit".into();
+                return
+            }
+            Ok(Some(version)) => {
+                version
+            }
+        };
 
-        mutex_lock!(ui_data).starting_ui_data.info_text = "Haha! Une loup!".into();
+        mutex_lock!(ui_data).starting_ui_data.info_text = format!("cdrskin version: {version}; Fetching tracks info...");
+        let Ok(tracks) = cdrskin_medium_track_info() else {
+            mutex_lock!(ui_data).any_key_to_exit = true;
+            return
+        };
+
+        mutex_lock!(ui_data).starting_ui_data.info_text = format!("Tracks number: {}", tracks.len());
     }
 
     pub fn tick(&mut self) -> io::Result<()> {
@@ -165,13 +182,16 @@ impl<B: Backend> Tui<B> {
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
-        if event::poll(std::time::Duration::from_millis(50))? {
+        if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                     // Ctrl-C pressed
                     self.should_quit = true;
                 }
                 if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
+                    self.should_quit = true;
+                }
+                if mutex_lock!(self.ui_data).any_key_to_exit {
                     self.should_quit = true;
                 }
             }
