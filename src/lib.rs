@@ -1,14 +1,27 @@
 #![feature(try_blocks)]
 #![feature(decl_macro)]
 
+use std::fs::File;
 use std::io;
+use std::io::{Read, Seek, SeekFrom};
 use std::process::{Command, Stdio};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::cli::ARGS;
+
+pub mod cli;
+
+/// The sector size optical discs use is 2048 bytes.
+const SECTOR_SIZE: u64 = 2048;
+
 macro lazy_regex($name:tt ,$regex:expr) {
     static $name: Lazy<Regex> = Lazy::new(|| Regex::new($regex).unwrap());
+}
+
+pub macro mutex_lock($m:expr) {
+    $m.lock().unwrap()
 }
 
 lazy_regex!(CDRSKIN_VERSION_REGEX, r"cdrskin version +: +(\d.*)");
@@ -21,13 +34,14 @@ lazy_regex!(
     r"^ *(\d+) +(\d+) +Data +(\d+) +(\d+) +(\d+) *$"
 );
 
+/// [start_addr], [end_addr] and [size] are in sectors (see [SECTOR_SIZE])
 #[derive(Debug, Clone)]
 pub struct Track {
     pub track_no: u32,
     pub session_no: u32,
-    pub start_addr: usize,
-    pub end_addr: usize,
-    pub size: usize,
+    pub start_addr: u64,
+    pub end_addr: u64,
+    pub size: u64,
 }
 
 fn execute_command_with_output(cmd: &[&str]) -> io::Result<String> {
@@ -67,6 +81,22 @@ pub fn cdrskin_medium_track_info() -> io::Result<Vec<Track>> {
         };
     }
     Ok(tracks)
+}
+
+pub type MetaInfo = String;
+
+/// Extracts the meta info from [track]
+///
+/// For now, the meta info is just a simple plain text.
+/// Just read out all the text until a NUL ('\0').
+pub fn extract_meta_info(track: &Track) -> io::Result<MetaInfo> {
+    let mut disc_file = File::open(&mutex_lock!(ARGS).drive)?;
+    disc_file.seek(SeekFrom::Start(track.start_addr * SECTOR_SIZE))?;
+    let bytes = disc_file
+        .bytes()
+        .take_while(|x| x.is_ok() && *x.as_ref().unwrap() != b'\0')
+        .collect::<io::Result<Vec<_>>>()?;
+    String::from_utf8(bytes).map_err(io::Error::other)
 }
 
 pub fn check_cdrskin_version() -> io::Result<Option<String>> {
