@@ -744,6 +744,7 @@ dependencies = [
  "once_cell",
  "ratatui",
  "regex",
+ "signal-hook",
  "yeet-ops",
 ]
 

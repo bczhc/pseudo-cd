@@ -1,6 +1,8 @@
 #![feature(yeet_expr)]
 
 use std::io::{self, stdout};
+use std::process::exit;
+use std::thread::spawn;
 
 use ratatui::{
     crossterm::{
@@ -11,6 +13,25 @@ use ratatui::{
     prelude::*,
     widgets::*,
 };
+use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
+
+const TUI_APP_TITLE: &str = "Pseudo-CD Player";
+
+fn register_signal_hooks() {
+    let mut signals = Signals::new([SIGINT, SIGTERM]).unwrap();
+    #[allow(clippy::never_loop)]
+    for _signal in &mut signals {
+        let _ = stop_tui();
+        exit(0);
+    }
+}
+
+fn stop_tui() -> io::Result<()> {
+    disable_raw_mode()?;
+    stdout().execute(LeaveAlternateScreen)?;
+    Ok(())
+}
 
 fn start_tui() -> anyhow::Result<()> {
     enable_raw_mode()?;
@@ -22,13 +43,12 @@ fn start_tui() -> anyhow::Result<()> {
         terminal.draw(ui)?;
         should_quit = handle_events()?;
     }
-
-    disable_raw_mode()?;
-    stdout().execute(LeaveAlternateScreen)?;
+    stop_tui()?;
     Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
+    spawn(register_signal_hooks);
     start_tui()?;
 
     // let args = Args::parse();
@@ -62,11 +82,15 @@ fn handle_events() -> io::Result<bool> {
 fn ui(frame: &mut Frame) {
     let frame_rect = frame.size();
     let app_block_inner_rect = Rect::new(1, 1, frame_rect.width - 2, frame_rect.height - 2);
+    app_block_ui(frame, app_block_inner_rect);
+}
 
+/// Renders content inside the app's outside-most border
+fn app_block_ui(frame: &mut Frame, rect: Rect) {
     let padding = Padding::new(
         0,
         0,
-        (app_block_inner_rect.height - 1/* the center text takes up one line */) / 2,
+        (rect.height - 1/* the center text takes up one line */) / 2,
         0,
     );
 
@@ -74,7 +98,7 @@ fn ui(frame: &mut Frame) {
         Paragraph::new("Test")
             .block(
                 Block::bordered()
-                    .title("Pseudo-CD player")
+                    .title(TUI_APP_TITLE)
                     .title_alignment(Alignment::Center)
                     .padding(padding),
             )
