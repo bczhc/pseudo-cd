@@ -154,6 +154,7 @@ impl<B: Backend> Tui<B> {
 
         mutex_lock!(ui_data).starting_ui_data.info_text = format!("cdrskin version: {version}; Fetching tracks info...");
         let Ok(tracks) = cdrskin_medium_track_info() else {
+            mutex_lock!(ui_data).starting_ui_data.info_text = "Error occurred. Press any key to exit".into();
             mutex_lock!(ui_data).any_key_to_exit = true;
             return
         };

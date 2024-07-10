@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use std::process::{Command, Stdio};
+use anyhow::anyhow;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -53,6 +54,9 @@ fn execute_command_with_output(cmd: &[&str]) -> io::Result<String> {
         .stderr(Stdio::null()) /* suppress stderr output */
         .spawn()?
         .wait_with_output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(anyhow!("Non-zero exit status")));
+    }
     Ok(String::from_utf8(output.stdout).expect("Invalid UTF-8 met"))
 }
 
