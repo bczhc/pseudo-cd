@@ -22,8 +22,8 @@ const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 #[derive(Clone, Debug)]
 enum AppUiState {
     /// Shows a starting centered text, indicating initialization
-    Starting(StartingUiData),
-    Player(PlayerUiData),
+    Starting,
+    Player,
 }
 
 pub struct Tui<B: Backend> {
@@ -70,14 +70,20 @@ impl PlayerUiData {
 
 pub struct UiData {
     ui_state: AppUiState,
+    starting_ui_data: StartingUiData,
+    player_ui_data: PlayerUiData,
 }
 
 impl Default for UiData {
     fn default() -> Self {
         Self {
-            ui_state: AppUiState::Starting(StartingUiData {
-                info_text: "Checking cdrskin...".into(),
-            }),
+            ui_state: AppUiState::Starting,
+            starting_ui_data: StartingUiData {
+                info_text: "Initializing...".into()
+            },
+            player_ui_data: PlayerUiData {
+
+            }
         }
     }
 }
@@ -93,12 +99,12 @@ impl UiData {
         let frame_rect = frame.size();
         let app_block_inner_rect = Rect::new(1, 1, frame_rect.width - 2, frame_rect.height - 2);
 
-        match &self.ui_state {
-            AppUiState::Starting(d) => {
-                d.draw_to(frame, app_block_inner_rect);
+        match self.ui_state {
+            AppUiState::Starting => {
+                self.starting_ui_data.draw_to(frame, app_block_inner_rect);
             }
-            AppUiState::Player(d) => {
-                d.draw_to(frame, app_block_inner_rect);
+            AppUiState::Player => {
+                self.player_ui_data.draw_to(frame, app_block_inner_rect);
             }
         }
     }
@@ -134,15 +140,11 @@ impl<B: Backend> Tui<B> {
     }
 
     fn background_thread(ui_data: Arc<Mutex<UiData>>) {
+        mutex_lock!(ui_data).starting_ui_data.info_text = "Wait for text change....".into();
+
         sleep(Duration::from_secs(2));
-        let mut guard = mutex_lock!(ui_data);
-        let ui_data = &mut *guard;
-        match &mut ui_data.ui_state {
-            AppUiState::Starting(d) => {
-                d.info_text = "CHANGED".into();
-            }
-            AppUiState::Player(_) => {}
-        }
+
+        mutex_lock!(ui_data).starting_ui_data.info_text = "Haha! Une loup!".into();
     }
     
     pub fn tick(&mut self) -> io::Result<()> {
