@@ -1,6 +1,10 @@
+use std::cell::{Cell, RefCell};
 use std::io;
 use std::io::stdout;
 use std::process::exit;
+use std::sync::{Arc, Mutex};
+use std::thread::{sleep, spawn};
+use std::time::Duration;
 
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
@@ -11,6 +15,7 @@ use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::widgets::{Block, Padding, Paragraph};
 use ratatui::{Frame, Terminal};
+use crate::mutex_lock;
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
@@ -24,7 +29,8 @@ enum AppUiState {
 pub struct Tui<B: Backend> {
     terminal: Terminal<B>,
     should_quit: bool,
-    ui_data: UiData,
+    ui_data: Arc<Mutex<UiData>>,
+    bg_thread_started: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -121,14 +127,34 @@ impl<B: Backend> Tui<B> {
         let terminal = Terminal::new(backend)?;
         Ok(Self {
             terminal,
-            ui_data: UiData::new(),
+            ui_data: Arc::new(Mutex::new(UiData::new())),
             should_quit: false,
+            bg_thread_started: false,
         })
     }
 
+    fn background_thread(ui_data: Arc<Mutex<UiData>>) {
+        sleep(Duration::from_secs(2));
+        let mut guard = mutex_lock!(ui_data);
+        let ui_data = &mut *guard;
+        match &mut ui_data.ui_state {
+            AppUiState::Starting(d) => {
+                d.info_text = "CHANGED".into();
+            }
+            AppUiState::Player(_) => {}
+        }
+    }
+    
     pub fn tick(&mut self) -> io::Result<()> {
+        if !self.bg_thread_started {
+            let arc = Arc::clone(&self.ui_data);
+            spawn(move || {
+                Self::background_thread(arc);
+            });
+        }
+        
         self.terminal.draw(|frame| {
-            self.ui_data.draw_to(frame);
+            mutex_lock!(self.ui_data).draw_to(frame);
         })?;
         self.handle_events()?;
         if self.should_quit {
