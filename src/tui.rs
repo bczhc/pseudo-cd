@@ -138,6 +138,7 @@ impl<B: Backend> Tui<B> {
         })
     }
 
+    // TODO: throw errors back outside, and add a dedicated error page
     fn background_thread(ui_data: Arc<Mutex<UiData>>) {
         mutex_lock!(ui_data).starting_ui_data.info_text = "Checking cdrskin...".into();
 
