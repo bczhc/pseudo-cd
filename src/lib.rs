@@ -1,5 +1,6 @@
 #![feature(try_blocks)]
 #![feature(decl_macro)]
+#![feature(yeet_expr)]
 
 use std::fs::File;
 use std::io;

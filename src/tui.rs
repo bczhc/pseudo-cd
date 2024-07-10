@@ -2,18 +2,20 @@ use std::io;
 use std::io::stdout;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
-use std::thread::{sleep, spawn};
+use std::thread::spawn;
 use std::time::Duration;
 
+use ratatui::{Frame, Terminal};
 use ratatui::backend::Backend;
+use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::widgets::{Block, Padding, Paragraph};
-use ratatui::{Frame, Terminal};
+use yeet_ops::yeet;
+
 use crate::{cdrskin_medium_track_info, check_cdrskin_version, mutex_lock};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
@@ -23,6 +25,7 @@ enum AppUiState {
     /// Shows a starting centered text, indicating initialization
     Starting,
     Player,
+    Error,
 }
 
 pub struct Tui<B: Backend> {
@@ -67,11 +70,27 @@ impl PlayerUiData {
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {}
 }
 
+#[derive(Clone, Debug)]
+struct ErrorUiData {
+    title: &'static str,
+    content: String,
+}
+
+impl ErrorUiData {
+    fn draw_to(&self, frame: &mut Frame, rect: Rect) {
+        frame.render_widget(Paragraph::new(self.title).alignment(Alignment::Center), rect);
+        frame.render_widget(Paragraph::new(self.content.as_str()), Rect::new(
+            rect.x, rect.y + 1, rect.width, rect.height - 1,
+        ))
+    }
+}
+
 pub struct UiData {
     ui_state: AppUiState,
     starting_ui_data: StartingUiData,
     player_ui_data: PlayerUiData,
     any_key_to_exit: bool,
+    error_ui_data: ErrorUiData,
 }
 
 impl Default for UiData {
@@ -83,6 +102,10 @@ impl Default for UiData {
             },
             player_ui_data: PlayerUiData {},
             any_key_to_exit: false,
+            error_ui_data: ErrorUiData {
+                title: "",
+                content: "".into(),
+            },
         }
     }
 }
@@ -104,6 +127,9 @@ impl UiData {
             }
             AppUiState::Player => {
                 self.player_ui_data.draw_to(frame, app_block_inner_rect);
+            }
+            AppUiState::Error => {
+                self.error_ui_data.draw_to(frame, app_block_inner_rect);
             }
         }
     }
@@ -138,15 +164,14 @@ impl<B: Backend> Tui<B> {
         })
     }
 
-    // TODO: throw errors back outside, and add a dedicated error page
-    fn background_thread(ui_data: Arc<Mutex<UiData>>) {
+    fn background_thread(ui_data: &Arc<Mutex<UiData>>) -> Result<(), String> {
         mutex_lock!(ui_data).starting_ui_data.info_text = "Checking cdrskin...".into();
 
         let version = check_cdrskin_version();
         let version = match version {
             Err(_) | Ok(None) => {
-                mutex_lock!(ui_data).starting_ui_data.info_text = "cdrskin not found! Press any key to exit".into();
-                return
+                mutex_lock!(ui_data).error_ui_data.title = "cdrskin not found! Press any key to exit";
+                yeet!(String::default())
             }
             Ok(Some(version)) => {
                 version
@@ -154,13 +179,18 @@ impl<B: Backend> Tui<B> {
         };
 
         mutex_lock!(ui_data).starting_ui_data.info_text = format!("cdrskin version: {version}; Fetching tracks info...");
-        let Ok(tracks) = cdrskin_medium_track_info() else {
-            mutex_lock!(ui_data).starting_ui_data.info_text = "Error occurred. Press any key to exit".into();
-            mutex_lock!(ui_data).any_key_to_exit = true;
-            return
+        let tracks = match cdrskin_medium_track_info() {
+            Ok(t) => {
+                t
+            }
+            Err(e) => {
+                mutex_lock!(ui_data).error_ui_data.title = "Error occurred. Press any key to exit";
+                yeet!(format!("{}", e))
+            }
         };
 
         mutex_lock!(ui_data).starting_ui_data.info_text = format!("Tracks number: {}", tracks.len());
+        Ok(())
     }
 
     pub fn tick(&mut self) -> io::Result<()> {
@@ -168,7 +198,13 @@ impl<B: Backend> Tui<B> {
             self.bg_thread_started = true;
             let arc = Arc::clone(&self.ui_data);
             spawn(move || {
-                Self::background_thread(arc);
+                let result = Self::background_thread(&arc);
+                if let Err(e) = result {
+                    let mut guard = mutex_lock!(arc);
+                    guard.any_key_to_exit = true;
+                    guard.ui_state = AppUiState::Error;
+                    guard.error_ui_data.content =  e;
+                }
             });
         }
 
