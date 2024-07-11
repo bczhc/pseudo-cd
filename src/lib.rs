@@ -1,6 +1,7 @@
 #![feature(try_blocks)]
 #![feature(decl_macro)]
 #![feature(yeet_expr)]
+#![feature(byte_slice_trim_ascii)]
 
 use std::fs::File;
 use std::io;
@@ -10,6 +11,7 @@ use anyhow::anyhow;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 use crate::cli::ARGS;
 
@@ -94,7 +96,12 @@ pub fn cdrskin_medium_track_info() -> io::Result<Vec<Track>> {
     Ok(tracks)
 }
 
-pub type MetaInfo = String;
+#[derive(Serialize, Deserialize)]
+pub struct MetaInfo {
+    title: String,
+    creation_time: u64,
+    list: Vec<String>,
+}
 
 /// Extracts the meta info from [track]
 ///
@@ -107,7 +114,8 @@ pub fn extract_meta_info(track: &Track) -> io::Result<MetaInfo> {
         .bytes()
         .take_while(|x| x.is_ok() && *x.as_ref().unwrap() != b'\0')
         .collect::<io::Result<Vec<_>>>()?;
-    String::from_utf8(bytes).map_err(io::Error::other)
+    let bytes = bytes.trim_ascii_end();
+    serde_json::from_slice(bytes).map_err(io::Error::other)
 }
 
 pub fn check_cdrskin_version() -> io::Result<Option<String>> {
