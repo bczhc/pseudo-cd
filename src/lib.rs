@@ -105,7 +105,7 @@ pub struct MetaInfo {
 
 /// Extracts the meta info from [track]
 ///
-/// For now, the meta info is just a simple plain text.
+/// The meta info is a JSON.
 /// Just read out all the text until a NUL ('\0').
 pub fn extract_meta_info(track: &Track) -> io::Result<MetaInfo> {
     let mut disc_file = File::open(&mutex_lock!(ARGS).drive)?;

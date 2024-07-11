@@ -2,21 +2,23 @@ use std::io;
 use std::io::stdout;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
-use std::thread::spawn;
+use std::thread::{sleep, spawn};
 use std::time::Duration;
 
-use ratatui::{Frame, Terminal};
+use anyhow::anyhow;
 use ratatui::backend::Backend;
-use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::widgets::{Block, Padding, Paragraph};
+use ratatui::{Frame, Terminal};
 use yeet_ops::yeet;
 
-use crate::{cdrskin_medium_track_info, check_cdrskin_version, mutex_lock};
+use crate::cli::ARGS;
+use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
@@ -78,10 +80,14 @@ struct ErrorUiData {
 
 impl ErrorUiData {
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {
-        frame.render_widget(Paragraph::new(self.title).alignment(Alignment::Center), rect);
-        frame.render_widget(Paragraph::new(self.content.as_str()), Rect::new(
-            rect.x, rect.y + 1, rect.width, rect.height - 1,
-        ))
+        frame.render_widget(
+            Paragraph::new(self.title).alignment(Alignment::Center),
+            rect,
+        );
+        frame.render_widget(
+            Paragraph::new(self.content.as_str()),
+            Rect::new(rect.x, rect.y + 1, rect.width, rect.height - 1),
+        )
     }
 }
 
@@ -164,32 +170,47 @@ impl<B: Backend> Tui<B> {
         })
     }
 
-    fn background_thread(ui_data: &Arc<Mutex<UiData>>) -> Result<(), String> {
-        mutex_lock!(ui_data).starting_ui_data.info_text = "Checking cdrskin...".into();
+    fn background_thread(ui_data: &Arc<Mutex<UiData>>) -> anyhow::Result<()> {
+        macro starting_info_text($($arg:tt)*) {
+            mutex_lock!(ui_data).starting_ui_data.info_text = format!($($arg)*)
+        }
+        
+        starting_info_text!("Checking cdrskin...");
 
         let version = check_cdrskin_version();
         let version = match version {
             Err(_) | Ok(None) => {
-                mutex_lock!(ui_data).error_ui_data.title = "cdrskin not found! Press any key to exit";
-                yeet!(String::default())
+                yeet!(anyhow!("Command `cdrskin` not found"))
             }
-            Ok(Some(version)) => {
-                version
-            }
+            Ok(Some(version)) => version,
         };
 
-        mutex_lock!(ui_data).starting_ui_data.info_text = format!("cdrskin version: {version}; Fetching tracks info...");
+        starting_info_text!("cdrskin version: {version}; Fetching tracks info...");
         let tracks = match cdrskin_medium_track_info() {
-            Ok(t) => {
-                t
-            }
+            Ok(t) => t,
             Err(e) => {
-                mutex_lock!(ui_data).error_ui_data.title = "Error occurred. Press any key to exit";
-                yeet!(format!("{}", e))
+                // TODO: errors from `cdrskin`
+                yeet!(anyhow!("{}", e))
             }
         };
+        
+        starting_info_text!("Tracks fetched. Extracting meta info...");
 
-        mutex_lock!(ui_data).starting_ui_data.info_text = format!("Tracks number: {}", tracks.len());
+        let meta_info_track = tracks
+            .get(
+                mutex_lock!(ARGS).meta_info_track - 1, /* track number starts from one */
+            )
+            .ok_or_else(|| {
+                anyhow!(
+                    "Meta info track is out-of-index; Number of tracks: {}",
+                    tracks.len()
+                )
+            })?;
+        let meta_info = extract_meta_info(meta_info_track)?;
+
+        starting_info_text!("Done.");
+        sleep(Duration::from_secs_f64(0.1));
+        
         Ok(())
     }
 
@@ -203,7 +224,8 @@ impl<B: Backend> Tui<B> {
                     let mut guard = mutex_lock!(arc);
                     guard.any_key_to_exit = true;
                     guard.ui_state = AppUiState::Error;
-                    guard.error_ui_data.content =  e;
+                    guard.error_ui_data.title = "Error occurred. Press any key to exit.";
+                    guard.error_ui_data.content = format!("{:?}", e);
                 }
             });
         }
