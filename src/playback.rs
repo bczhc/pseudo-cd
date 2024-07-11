@@ -48,17 +48,31 @@ pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
 
 pub enum PlayerCommand {
     /// Go to a position with [offset] in bytes
-    Goto(u64),
+    /// 
+    /// The second parameter indicates autoplay
+    Goto(u64, bool),
     /// Seek to a position with duration in seconds
     Seek(f64),
     /// Open the file and start playing
     Start,
     Pause,
     Play,
+    /// equivalent to [`PlayerCommand::Start`] on `false`
+    /// and [`PlayerCommand::Pause`] on `true`
+    SetPaused(bool),
     /// Volume level is in 0..1
     ChangeVolume(f64),
     /// Get the current position in seconds
-    GetPosition(RefCell<f64>),
+    GetPosition,
+    /// Get if in paused state
+    GetIsPaused,
+}
+
+pub enum PlayerResult {
+    None,
+    IsPaused(bool),
+    /// Current position in seconds
+    Position(f64),
 }
 
 pub struct StreamSendWrapper(Stream);
@@ -69,9 +83,11 @@ impl From<Stream> for StreamSendWrapper {
     }
 }
 
+// TODO: safety is not investigated for multiple platforms
 unsafe impl Send for StreamSendWrapper {}
 
-pub fn start_global_playback_thread(drive: PathBuf) -> anyhow::Result<SyncSender<PlayerCommand>> {
+// TODO: create a helper wrapper
+pub fn start_global_playback_thread(drive: PathBuf, result_arc: Arc<Mutex<PlayerResult>>) -> anyhow::Result<SyncSender<PlayerCommand>> {
     let (tx, rx) = sync_channel::<PlayerCommand>(1);
     let (stream, sample_tx) = create_audio_stream()?;
     mutex_lock!(AUDIO_STREAM).replace(StreamSendWrapper(stream));
@@ -85,9 +101,12 @@ pub fn start_global_playback_thread(drive: PathBuf) -> anyhow::Result<SyncSender
                 Ok(PlayerCommand::Start) => {
                     reader = Some(BufReader::new(File::open(&drive).unwrap()));
                 }
-                Ok(PlayerCommand::Goto(offset)) => {
+                Ok(PlayerCommand::Goto(offset, play)) => {
                     if let Some(ref mut r) = reader {
                         r.seek(SeekFrom::Start(offset)).unwrap();
+                        if play {
+                            paused = false;
+                        }
                     }
                 }
                 Ok(PlayerCommand::Pause) => {
@@ -95,6 +114,12 @@ pub fn start_global_playback_thread(drive: PathBuf) -> anyhow::Result<SyncSender
                 }
                 Ok(PlayerCommand::Play) => {
                     paused = false;
+                }
+                Ok(PlayerCommand::SetPaused(p)) => {
+                    paused = p;
+                }
+                Ok(PlayerCommand::GetIsPaused) => {
+                    *result_arc.lock().unwrap() = PlayerResult::IsPaused(paused);
                 }
                 Ok(_) => {
                     unimplemented!();

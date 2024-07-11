@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fs::File;
 /// ## Key bindings
 ///
@@ -8,7 +9,7 @@ use std::fs::File;
 /// k, ArrowUp: Selection move down
 /// Enter: Play the selection
 
-use std::io;
+use std::{hint, io};
 use std::io::stdout;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
@@ -31,7 +32,7 @@ use yeet_ops::yeet;
 
 use crate::cli::ARGS;
 use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, SECTOR_SIZE, Track};
-use crate::playback::{AUDIO_STREAM, create_audio_stream, PlayerCommand, start_global_playback_thread};
+use crate::playback::{AUDIO_STREAM, create_audio_stream, PlayerCommand, PlayerResult, start_global_playback_thread};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
@@ -160,6 +161,7 @@ pub struct UiData {
     error_ui_data: ErrorUiData,
     any_key_to_exit: bool,
     player_command_tx: Option<SyncSender<PlayerCommand>>,
+    player_result: Arc<Mutex<PlayerResult>>,
     // FIXME: clarify audio "tracks" and meta info "track"
     tracks: Arc<Vec<Track>>,
 }
@@ -183,6 +185,7 @@ impl Default for UiData {
                 content: "".into(),
             },
             player_command_tx: None,
+            player_result: Arc::new(Mutex::new(PlayerResult::None)),
             tracks: Arc::new(vec![]),
         }
     }
@@ -287,7 +290,8 @@ impl<B: Backend> Tui<B> {
 
         starting_info_text!("Initializing audio sink...");
         let command_tx = start_global_playback_thread(
-            mutex_lock!(ARGS).drive.clone()
+            mutex_lock!(ARGS).drive.clone(),
+            Arc::clone(&mutex_lock!(ui_data).player_result)
         )?;
         mutex_lock!(ui_data).player_command_tx = Some(command_tx);
 
@@ -302,8 +306,7 @@ impl<B: Backend> Tui<B> {
         if let Some(first_track) = tracks.get(1) {
             let guard = mutex_lock!(ui_data);
             guard.player_command_tx.as_ref().unwrap().send(PlayerCommand::Start).unwrap();
-            guard.player_command_tx.as_ref().unwrap().send(PlayerCommand::Goto(first_track.start_addr * SECTOR_SIZE)).unwrap();
-            guard.player_command_tx.as_ref().unwrap().send(PlayerCommand::Play).unwrap();
+            guard.player_command_tx.as_ref().unwrap().send(PlayerCommand::Goto(first_track.start_addr * SECTOR_SIZE, true)).unwrap();
         }
 
         Ok(())
@@ -381,14 +384,14 @@ impl<B: Backend> Tui<B> {
                             let playing_track = &mut ui_data_guard.player_ui_data.playing_track;
                             *playing_track = wrapping_next(*playing_track);
                             let playing_track_no = *playing_track;
-                            player_command_tx!().send(PlayerCommand::Goto(track_offset!(playing_track_no))).unwrap();
+                            player_command_tx!().send(PlayerCommand::Goto(track_offset!(playing_track_no), true)).unwrap();
                         }
                         KeyCode::Char('p') => {
                             // previous
                             let playing_track = &mut ui_data_guard.player_ui_data.playing_track;
                             *playing_track = wrapping_prev(*playing_track);
                             let playing_track_no = *playing_track;
-                            player_command_tx!().send(PlayerCommand::Goto(track_offset!(playing_track_no))).unwrap();
+                            player_command_tx!().send(PlayerCommand::Goto(track_offset!(playing_track_no), true)).unwrap();
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
                             // move down
@@ -404,7 +407,19 @@ impl<B: Backend> Tui<B> {
                             let selected_track_no = ui_data_guard.player_ui_data.selected_track;
                             let offset = track_offset!(selected_track_no);
                             ui_data_guard.player_ui_data.playing_track = selected_track_no;
-                            player_command_tx!().send(PlayerCommand::Goto(offset)).unwrap();
+                            player_command_tx!().send(PlayerCommand::Goto(offset, true)).unwrap();
+                        }
+                        KeyCode::Char(' ') => {
+                            player_command_tx!().send(PlayerCommand::GetIsPaused).unwrap();
+                            let paused = loop {
+                                if let PlayerResult::IsPaused(paused) = *ui_data_guard.player_result.lock().unwrap() {
+                                    break paused;
+                                }
+                                hint::spin_loop();
+                            };
+                            *ui_data_guard.player_result.lock().unwrap() = PlayerResult::None;
+                            let toggle = !paused;
+                            player_command_tx!().send(PlayerCommand::SetPaused(toggle)).unwrap();
                         }
                         _ => {}
                     }
