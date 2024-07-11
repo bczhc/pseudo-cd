@@ -17,6 +17,7 @@ use crate::cli::ARGS;
 
 pub mod cli;
 pub mod tui;
+pub mod playback;
 
 /// The sector size optical discs use is 2048 bytes.
 const SECTOR_SIZE: u64 = 2048;
