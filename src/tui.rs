@@ -12,9 +12,10 @@ use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::crossterm::{event, ExecutableCommand};
-use ratatui::layout::{Alignment, Rect};
-use ratatui::widgets::{Block, Padding, Paragraph};
+use ratatui::layout::{Alignment, Constraint, Rect};
+use ratatui::widgets::{Block, Borders, List, ListItem, Padding, Paragraph};
 use ratatui::{Frame, Terminal};
+use ratatui::prelude::{Color, Layout, Style, Stylize};
 use yeet_ops::yeet;
 
 use crate::cli::ARGS;
@@ -54,10 +55,7 @@ impl StartingUiData {
         frame.render_widget(
             Paragraph::new(&*self.info_text)
                 .block(
-                    Block::bordered()
-                        .title(TUI_APP_TITLE)
-                        .title_alignment(Alignment::Center)
-                        .padding(padding),
+                    Block::bordered().padding(padding),
                 )
                 .alignment(Alignment::Center),
             frame.size(),
@@ -66,10 +64,53 @@ impl StartingUiData {
 }
 
 #[derive(Clone, Debug)]
-struct PlayerUiData {}
+enum PlayerState {
+    Playing,
+    Paused,
+}
+
+#[derive(Clone, Debug)]
+struct PlayerUiData {
+    song_list: Vec<String>,
+    player_state: PlayerState,
+    song_name: String,
+    highlighted_track: usize,
+}
 
 impl PlayerUiData {
-    fn draw_to(&self, frame: &mut Frame, rect: Rect) {}
+    fn draw_to(&self, frame: &mut Frame, rect: Rect) {
+        let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
+            .split(rect);
+
+
+
+        let list_items = self.song_list.iter().enumerate().map(|(i, x)| {
+            let mut item = ListItem::new(x.as_str());
+            if self.highlighted_track - 1 == i {
+                // TODO: not consider terminal themes like white-background-black-text?
+                let style = Style {
+                    bg: Some(Color::White),
+                    fg: Some(Color::Black),
+                    ..Default::default()
+                };
+                item = item.style(style);
+            }
+            item
+        });
+        let list = List::new(list_items);
+        frame.render_widget(list, layout[0]);
+
+        let state_str = match self.player_state {
+            PlayerState::Playing => "Playing: ",
+            PlayerState::Paused => "Paused: "
+        };
+        let bottom_title = format!("{state_str}{}", self.song_name);
+
+        frame.render_widget(
+            Block::new().borders(Borders::BOTTOM).title(bottom_title.as_str()).title_alignment(Alignment::Center),
+            layout[1],
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -95,8 +136,8 @@ pub struct UiData {
     ui_state: AppUiState,
     starting_ui_data: StartingUiData,
     player_ui_data: PlayerUiData,
-    any_key_to_exit: bool,
     error_ui_data: ErrorUiData,
+    any_key_to_exit: bool,
 }
 
 impl Default for UiData {
@@ -106,7 +147,12 @@ impl Default for UiData {
             starting_ui_data: StartingUiData {
                 info_text: "Initializing...".into(),
             },
-            player_ui_data: PlayerUiData {},
+            player_ui_data: PlayerUiData {
+                song_list: Default::default(),
+                highlighted_track: 1,
+                song_name: Default::default(),
+                player_state: PlayerState::Playing,
+            },
             any_key_to_exit: false,
             error_ui_data: ErrorUiData {
                 title: "",
@@ -138,6 +184,8 @@ impl UiData {
                 self.error_ui_data.draw_to(frame, app_block_inner_rect);
             }
         }
+
+        frame.render_widget(Block::bordered().title(TUI_APP_TITLE).title_alignment(Alignment::Center), frame_rect);
     }
 }
 
@@ -174,7 +222,7 @@ impl<B: Backend> Tui<B> {
         macro starting_info_text($($arg:tt)*) {
             mutex_lock!(ui_data).starting_ui_data.info_text = format!($($arg)*)
         }
-        
+
         starting_info_text!("Checking cdrskin...");
 
         let version = check_cdrskin_version();
@@ -193,7 +241,7 @@ impl<B: Backend> Tui<B> {
                 yeet!(anyhow!("{}", e))
             }
         };
-        
+
         starting_info_text!("Tracks fetched. Extracting meta info...");
 
         let meta_info_track = tracks
@@ -210,7 +258,10 @@ impl<B: Backend> Tui<B> {
 
         starting_info_text!("Done.");
         sleep(Duration::from_secs_f64(0.1));
-        
+
+        mutex_lock!(ui_data).ui_state = AppUiState::Player;
+        mutex_lock!(ui_data).player_ui_data.song_list = meta_info.list;
+
         Ok(())
     }
 
