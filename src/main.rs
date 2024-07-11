@@ -9,7 +9,6 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 use pseudo_cd::cli::{Args, ARGS};
 use pseudo_cd::mutex_lock;
-use pseudo_cd::playback::demo;
 
 use pseudo_cd::tui::{clean_up_and_exit, Tui};
 
@@ -30,10 +29,6 @@ fn run_tui() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    demo()?;
-    
-    return Ok(());
-
     let args = Args::parse();
     *mutex_lock!(ARGS) = args;
 

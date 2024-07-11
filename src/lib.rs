@@ -2,6 +2,7 @@
 #![feature(decl_macro)]
 #![feature(yeet_expr)]
 #![feature(byte_slice_trim_ascii)]
+#![feature(let_chains)]
 
 use std::fs::File;
 use std::io;
