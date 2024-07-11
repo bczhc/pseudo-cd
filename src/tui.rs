@@ -1,3 +1,12 @@
+/// ## Key bindings
+///
+/// Space: Play/Pause
+/// n: Next
+/// p: Previous
+/// j: Selection move up
+/// k: Selection move down
+/// Enter: Play the selection
+
 use std::io;
 use std::io::stdout;
 use std::process::exit;
@@ -23,7 +32,7 @@ use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info,
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum AppUiState {
     /// Shows a starting centered text, indicating initialization
     Starting,
@@ -85,7 +94,8 @@ impl PlayerUiData {
 
 
         let list_items = self.song_list.iter().enumerate().map(|(i, x)| {
-            let mut item = ListItem::new(x.as_str());
+            let item_text = format!("{}: {}", i + 1, x);
+            let mut item = ListItem::new(item_text);
             if self.highlighted_track - 1 == i {
                 // TODO: not consider terminal themes like white-background-black-text?
                 let style = Style {
@@ -260,7 +270,8 @@ impl<B: Backend> Tui<B> {
         sleep(Duration::from_secs_f64(0.1));
 
         mutex_lock!(ui_data).ui_state = AppUiState::Player;
-        mutex_lock!(ui_data).player_ui_data.song_list = meta_info.list;
+        let coerced_song_list = meta_info.list.into_iter().take(tracks.len() - 1).collect::<Vec<_>>();
+        mutex_lock!(ui_data).player_ui_data.song_list = coerced_song_list;
 
         Ok(())
     }
@@ -295,6 +306,9 @@ impl<B: Backend> Tui<B> {
     pub fn handle_events(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
+                let mut ui_data_guard = mutex_lock!(self.ui_data);
+                let track_length = ui_data_guard.player_ui_data.song_list.len();
+
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                     // Ctrl-C pressed
                     self.should_quit = true;
@@ -302,8 +316,37 @@ impl<B: Backend> Tui<B> {
                 if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
                     self.should_quit = true;
                 }
-                if mutex_lock!(self.ui_data).any_key_to_exit {
+                if ui_data_guard.any_key_to_exit {
                     self.should_quit = true;
+                }
+
+                if ui_data_guard.ui_state == AppUiState::Player {
+                    match key.code {
+                        KeyCode::Char('n') => {
+                            // next
+
+                        }
+                        KeyCode::Char('p') => {
+                            // previous
+                        }
+                        KeyCode::Char('j') => {
+                            // move down
+                            let track_no = &mut ui_data_guard.player_ui_data.highlighted_track;
+                            *track_no += 1;
+                            if *track_no > track_length {
+                                *track_no = 1;
+                            }
+                        }
+                        KeyCode::Char('k') => {
+                            let track_no = &mut ui_data_guard.player_ui_data.highlighted_track;
+                            if *track_no - 1 == 0 {
+                                *track_no = track_length;
+                            } else {
+                                *track_no -= 1;
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
