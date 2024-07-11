@@ -24,7 +24,7 @@ use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::widgets::{Block, Borders, List, ListItem, Padding, Paragraph};
 use ratatui::{Frame, Terminal};
-use ratatui::prelude::{Color, Layout, Style, Stylize};
+use ratatui::prelude::{Color, Layout, Style};
 use yeet_ops::yeet;
 
 use crate::cli::ARGS;
@@ -82,8 +82,8 @@ enum PlayerState {
 struct PlayerUiData {
     song_list: Vec<String>,
     player_state: PlayerState,
-    song_name: String,
-    highlighted_track: usize,
+    selected_track: usize,
+    playing_track: usize,
 }
 
 impl PlayerUiData {
@@ -96,8 +96,16 @@ impl PlayerUiData {
         let list_items = self.song_list.iter().enumerate().map(|(i, x)| {
             let item_text = format!("{}: {}", i + 1, x);
             let mut item = ListItem::new(item_text);
-            if self.highlighted_track - 1 == i {
-                // TODO: not consider terminal themes like white-background-black-text?
+            // TODO: not consider terminal themes like white-background-black-text?
+            if self.selected_track - 1 == i {
+                let style = Style {
+                    bg: Some(Color::Gray),
+                    fg: Some(Color::White),
+                    ..Default::default()
+                };
+                item = item.style(style);
+            }
+            if self.playing_track - 1 == i {
                 let style = Style {
                     bg: Some(Color::White),
                     fg: Some(Color::Black),
@@ -114,7 +122,7 @@ impl PlayerUiData {
             PlayerState::Playing => "Playing: ",
             PlayerState::Paused => "Paused: "
         };
-        let bottom_title = format!("{state_str}{}", self.song_name);
+        let bottom_title = format!("{state_str}{}", self.song_list[self.playing_track - 1]);
 
         frame.render_widget(
             Block::new().borders(Borders::BOTTOM).title(bottom_title.as_str()).title_alignment(Alignment::Center),
@@ -159,8 +167,8 @@ impl Default for UiData {
             },
             player_ui_data: PlayerUiData {
                 song_list: Default::default(),
-                highlighted_track: 1,
-                song_name: Default::default(),
+                selected_track: 1,
+                playing_track: 1,
                 player_state: PlayerState::Playing,
             },
             any_key_to_exit: false,
@@ -320,30 +328,44 @@ impl<B: Backend> Tui<B> {
                     self.should_quit = true;
                 }
 
+                let wrapping_next = |track_no: usize| {
+                    if track_no == track_length {
+                        1
+                    } else {
+                        track_no + 1
+                    }
+                };
+                let wrapping_prev = |track_no: usize| {
+                    if track_no == 1 {
+                        track_length
+                    } else {
+                        track_no - 1
+                    }
+                };
+
                 if ui_data_guard.ui_state == AppUiState::Player {
                     match key.code {
                         KeyCode::Char('n') => {
                             // next
-
+                            let playing_track = &mut ui_data_guard.player_ui_data.playing_track;
+                            *playing_track = wrapping_next(*playing_track);
                         }
                         KeyCode::Char('p') => {
                             // previous
+                            let playing_track = &mut ui_data_guard.player_ui_data.playing_track;
+                            *playing_track = wrapping_prev(*playing_track);
                         }
                         KeyCode::Char('j') => {
                             // move down
-                            let track_no = &mut ui_data_guard.player_ui_data.highlighted_track;
-                            *track_no += 1;
-                            if *track_no > track_length {
-                                *track_no = 1;
-                            }
+                            let track_no = &mut ui_data_guard.player_ui_data.selected_track;
+                            *track_no = wrapping_next(*track_no);
                         }
                         KeyCode::Char('k') => {
-                            let track_no = &mut ui_data_guard.player_ui_data.highlighted_track;
-                            if *track_no - 1 == 0 {
-                                *track_no = track_length;
-                            } else {
-                                *track_no -= 1;
-                            }
+                            let track_no = &mut ui_data_guard.player_ui_data.selected_track;
+                            *track_no = wrapping_prev(*track_no);
+                        }
+                        KeyCode::Enter => {
+                            ui_data_guard.player_ui_data.playing_track = ui_data_guard.player_ui_data.selected_track;
                         }
                         _ => {}
                     }
