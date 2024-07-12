@@ -1,30 +1,44 @@
-use crate::mutex_lock;
-use byteorder::{ReadBytesExt, LE};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Sample, SampleFormat, SampleRate, Stream};
-use once_cell::sync::Lazy;
-
 use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread::spawn;
+
+use anyhow::anyhow;
+use byteorder::{LE, ReadBytesExt};
+use cpal::{Sample, SampleFormat, SampleRate, Stream};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use once_cell::sync::Lazy;
+
+use crate::mutex_lock;
 
 /// We place [`Stream`] here just to prevent it from dropping
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));
+pub const AUDIO_SAMPLE_RATE: u32 = 44100;
 
 pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
-    let (tx, rx) = sync_channel(44100);
+    let (tx, rx) = sync_channel(AUDIO_SAMPLE_RATE as usize);
 
-    // TODO: need more strict output config checks
     let host = cpal::default_host();
-    let device = host.default_output_device().unwrap();
-    let output_configs = device.supported_output_configs()?;
-    let output_configs = output_configs
-        .filter(|x| x.channels() == 2 && x.sample_format() == SampleFormat::I16)
-        .collect::<Vec<_>>();
-    let output_config = output_configs[0].with_sample_rate(SampleRate(44100));
+    let device = host
+        .default_output_device()
+        .ok_or_else(|| anyhow!("No audio output device found"))?;
+    let configs = device.supported_output_configs()?;
+    let mut configs =
+        configs.filter(|x| x.channels() == 2 && x.sample_format() == SampleFormat::I16);
+    let first = configs
+        .next()
+        .ok_or_else(|| anyhow!("No audio output profile found"))?;
+
+    let output_config = first
+        .try_with_sample_rate(SampleRate(AUDIO_SAMPLE_RATE))
+        .ok_or_else(|| {
+            anyhow!(
+                "No audio output profile with sample rate {} found",
+                AUDIO_SAMPLE_RATE
+            )
+        })?;
 
     // Why here there's no multiple-move encountering?? this `play_fn` should be called
     // multiple times, and `rx` will be "moved" many times?
