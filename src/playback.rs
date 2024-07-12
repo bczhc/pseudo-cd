@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{channel, Receiver, sync_channel, SyncSender};
 use std::thread::spawn;
 
 use anyhow::anyhow;
@@ -15,6 +15,7 @@ use crate::mutex_lock;
 
 /// We place [`Stream`] here just to prevent it from dropping
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));
+pub static PLAYBACK_HANDLE: Lazy<Mutex<Option<PlaybackHandle>>> = Lazy::new(|| Mutex::new(None));
 pub const AUDIO_SAMPLE_RATE: u32 = 44100;
 
 pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
@@ -99,12 +100,43 @@ impl From<Stream> for StreamSendWrapper {
 // TODO: safety is not investigated for multiple platforms
 unsafe impl Send for StreamSendWrapper {}
 
-// TODO: create a helper wrapper
+pub struct PlaybackHandle {
+    command_tx: SyncSender<PlayerCommand>,
+    result_rx: Arc<Mutex<Receiver<PlayerResult>>>,
+}
+
+impl PlaybackHandle {
+    pub fn send(&self, cmd: PlayerCommand) {
+        self.command_tx.send(cmd).unwrap()
+    }
+    
+    pub fn send_commands(&self, cmds: impl IntoIterator<Item = PlayerCommand>) {
+        for c in cmds {
+            self.send(c);
+        }
+    }
+    
+    pub fn player_result(&self) -> PlayerResult {
+        mutex_lock!(self.result_rx).recv().unwrap()
+    }
+    
+    pub fn send_recv(&self, cmd: PlayerCommand) -> PlayerResult {
+        self.send(cmd);
+        self.player_result()
+    }
+}
+
+pub fn set_global_playback_handle(playback_handle: PlaybackHandle) {
+    mutex_lock!(PLAYBACK_HANDLE).replace(playback_handle);
+}
+
 pub fn start_global_playback_thread(
     drive: PathBuf,
-    result_arc: Arc<Mutex<PlayerResult>>,
-) -> anyhow::Result<SyncSender<PlayerCommand>> {
-    let (tx, rx) = sync_channel::<PlayerCommand>(1);
+) -> anyhow::Result<PlaybackHandle> {
+    let (cmd_tx, cmd_rx) = sync_channel::<PlayerCommand>(1);
+    let (result_tx, result_rx) = sync_channel::<PlayerResult>(1);
+    let result_rx = Arc::new(Mutex::new(result_rx));
+    
     let (stream, sample_tx) = create_audio_stream()?;
     mutex_lock!(AUDIO_STREAM).replace(StreamSendWrapper(stream));
     spawn(move || {
@@ -113,7 +145,7 @@ pub fn start_global_playback_thread(
         // TODO: avoid the endless loop
         loop {
             // TODO: error handling (unwrap) inside-thread
-            match rx.try_recv() {
+            match cmd_rx.try_recv() {
                 Ok(PlayerCommand::Start) => {
                     reader = Some(BufReader::new(File::open(&drive).unwrap()));
                 }
@@ -135,7 +167,7 @@ pub fn start_global_playback_thread(
                     paused = p;
                 }
                 Ok(PlayerCommand::GetIsPaused) => {
-                    *result_arc.lock().unwrap() = PlayerResult::IsPaused(paused);
+                    result_tx.send(PlayerResult::IsPaused(paused)).unwrap();
                 }
                 Ok(_) => {
                     unimplemented!();
@@ -145,6 +177,7 @@ pub fn start_global_playback_thread(
             if !paused && let Some(ref mut r) = reader {
                 for _ in 0..1024 {
                     let sample = r.read_i16::<LE>().unwrap();
+                    // TODO: panics on `clean_up_and_exit`
                     sample_tx.send(sample).unwrap()
                 }
             }
@@ -153,5 +186,8 @@ pub fn start_global_playback_thread(
         let mutex = Mutex::new(());
         let _a = Condvar::new().wait(mutex.lock().unwrap()).unwrap();
     });
-    Ok(tx)
+    Ok(PlaybackHandle {
+        command_tx: cmd_tx,
+        result_rx
+    })
 }
