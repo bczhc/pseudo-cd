@@ -92,7 +92,7 @@ pub enum PlayerCommand {
     GetIsPaused,
     /// This issues a "stop" command and the player thread will emit
     /// a [`PlayerCallbackEvent::Stopped`] event.
-    /// 
+    ///
     /// This is useful to wait the player thread to be terminated.
     StopAndWait,
 }
@@ -181,7 +181,6 @@ pub fn start_global_playback_thread<D, F>(
             if let Some(x) = event_callback.as_ref() { x($($arg)*, &callback_data) }
         }
         loop {
-            // TODO: error handling (unwrap) inside-thread
             match cmd_rx.try_recv() {
                 Ok(PlayerCommand::Start) => {
                     reader = Some(BufReader::new(File::open(&drive).unwrap()));
