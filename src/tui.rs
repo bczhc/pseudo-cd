@@ -6,6 +6,7 @@ use std::time::Duration;
 use std::io;
 
 use anyhow::anyhow;
+use log::debug;
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
@@ -484,9 +485,11 @@ impl<B: Backend> Tui<B> {
                     *idx = wrapping_prev(*idx);
                 }}
                 macro player_goto_playing_one() {{
-                    let guard = ui_data_guard!();
-                    let playing_song_idx = guard.player_ui_data.playing_song_idx;
-                    let song_track = guard.disc_tracks[guard.meta_info.list[playing_song_idx].session_no - 1];
+                    let song_track = {
+                        let guard = ui_data_guard!();
+                        let playing_song_idx = guard.player_ui_data.playing_song_idx;
+                        guard.disc_tracks[guard.meta_info.list[playing_song_idx].session_no - 1]
+                    };
                     player_send!(PlayerCommand::Goto(song_track, true));
                 }}
                 macro playing_track() {{
@@ -498,8 +501,11 @@ impl<B: Backend> Tui<B> {
                     match key.code {
                         KeyCode::Char('n') => {
                             // next
+                            debug!("1");
                             index_inc!(playing_song_idx);
+                            debug!("2");
                             player_goto_playing_one!();
+                            debug!("3");
                         }
                         KeyCode::Char('p') => {
                             // previous
@@ -553,23 +559,29 @@ impl<B: Backend> Tui<B> {
                         }
                         KeyCode::Char(',') => {
                             // volume down
-                            let mut guard = ui_data_guard!();
-                            let volume = &mut guard.player_ui_data.volume;
-                            *volume -= 0.01;
-                            if *volume <= 0.0 {
-                                *volume = 0.0;
-                            }
-                            player_send!(PlayerCommand::ChangeVolume(*volume));
+                            let volume = {
+                                let mut guard = ui_data_guard!();
+                                let volume = &mut guard.player_ui_data.volume;
+                                *volume -= 0.01;
+                                if *volume <= 0.0 {
+                                    *volume = 0.0;
+                                }
+                                *volume
+                            };
+                            player_send!(PlayerCommand::ChangeVolume(volume));
                         }
                         KeyCode::Char('.') => {
                             // volume up
-                            let mut guard = ui_data_guard!();
-                            let volume = &mut guard.player_ui_data.volume;
-                            *volume += 0.01;
-                            if *volume >= 1.0 {
-                                *volume = 1.0;
-                            }
-                            player_send!(PlayerCommand::ChangeVolume(*volume));
+                            let volume = {
+                                let mut guard = ui_data_guard!();
+                                let volume = &mut guard.player_ui_data.volume;
+                                *volume += 0.01;
+                                if *volume >= 1.0 {
+                                    *volume = 1.0;
+                                }
+                                *volume
+                            };
+                            player_send!(PlayerCommand::ChangeVolume(volume));
                         }
                         _ => {}
                     }
