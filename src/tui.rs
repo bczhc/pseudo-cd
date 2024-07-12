@@ -135,18 +135,26 @@ impl PlayerUiData {
             layout[1],
         );
 
-        fn non_nan(ratio: f64) -> f64 {
-            if ratio.is_nan() {
-                return 0.0;
+        fn coerce(ratio: f64) -> f64 {
+            match ratio { 
+                _ if !ratio.is_finite() => {
+                    0.0
+                }
+                _ if ratio < 0.0 => {
+                    0.0
+                }
+                _ if ratio > 1.0 => {
+                    1.0
+                }
+                _ => ratio
             }
-            ratio
         }
 
         frame.render_widget(LineGauge::default()
                                 .filled_style(Style::default().fg(Color::Blue))
                                 .unfilled_style(Style::default().fg(Color::Gray))
                                 .label(duration_string((self.current_position, self.total_duration)))
-                                .ratio(non_nan(self.current_position as f64 / self.total_duration as f64)), layout[2]);
+                                .ratio(coerce(self.current_position as f64 / self.total_duration as f64)), layout[2]);
     }
 }
 

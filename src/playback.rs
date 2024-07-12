@@ -118,17 +118,17 @@ impl PlaybackHandle {
     pub fn send(&self, cmd: PlayerCommand) {
         self.command_tx.send(cmd).unwrap()
     }
-    
+
     pub fn send_commands(&self, cmds: impl IntoIterator<Item = PlayerCommand>) {
         for c in cmds {
             self.send(c);
         }
     }
-    
+
     pub fn player_result(&self) -> PlayerResult {
         mutex_lock!(self.result_rx).recv().unwrap()
     }
-    
+
     pub fn send_recv(&self, cmd: PlayerCommand) -> PlayerResult {
         self.send(cmd);
         self.player_result()
@@ -161,6 +161,9 @@ pub fn start_global_playback_thread<D, F>(
         let event_callback = event_callback;
         let callback_data = callback_data;
         const BYTES_ONE_SEC: u64 = AUDIO_SAMPLE_RATE as u64 * AUDIO_BIT_DEPTH as u64 * AUDIO_CHANNELS as u64 / 8;
+        macro event_callback($($arg:tt)*) {
+            if let Some(x) = event_callback.as_ref() { x($($arg)*, &callback_data) }
+        }
         // TODO: avoid the endless loop
         loop {
             // TODO: error handling (unwrap) inside-thread
@@ -173,24 +176,25 @@ pub fn start_global_playback_thread<D, F>(
                         r.seek(SeekFrom::Start(track.start_offset())).unwrap();
                         if play {
                             paused = false;
+                            event_callback!(PlayerCallbackEvent::Paused(false))
                         }
                     }
                     start_pos = track.start_offset();
                     end_pos = track.end_offset();
                     song_seconds = ((end_pos - start_pos) / BYTES_ONE_SEC) as u32;
-                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Progress(0, song_seconds), &callback_data) }
+                    event_callback!(PlayerCallbackEvent::Progress(0, song_seconds))
                 }
                 Ok(PlayerCommand::Pause) => {
                     paused = true;
-                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Paused(paused), &callback_data) }
+                    event_callback!(PlayerCallbackEvent::Paused(paused))
                 }
                 Ok(PlayerCommand::Play) => {
                     paused = false;
-                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Paused(paused), &callback_data) }
+                    event_callback!(PlayerCallbackEvent::Paused(paused))
                 }
                 Ok(PlayerCommand::SetPaused(p)) => {
                     paused = p;
-                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Paused(paused), &callback_data) }
+                    event_callback!(PlayerCallbackEvent::Paused(paused));
                 }
                 Ok(PlayerCommand::GetIsPaused) => {
                     result_tx.send(PlayerResult::IsPaused(paused)).unwrap();
@@ -208,10 +212,7 @@ pub fn start_global_playback_thread<D, F>(
 
                     let pos = r.stream_position().unwrap();
                     if (pos - start_pos) % (BYTES_ONE_SEC) == 0 {
-                        if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Progress(
-                            ((pos - start_pos) / BYTES_ONE_SEC) as u32,
-                            song_seconds,
-                        ), &callback_data) }
+                        event_callback!(PlayerCallbackEvent::Progress(((pos - start_pos) / BYTES_ONE_SEC) as u32,song_seconds));
                     }
                 }
             }
