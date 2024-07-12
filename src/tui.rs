@@ -250,7 +250,7 @@ impl<B: Backend> Tui<B> {
 
     fn background_thread(ui_data: &Arc<Mutex<UiData>>) -> anyhow::Result<()> {
         macro starting_info_text($($arg:tt)*) {
-            mutex_lock!(ui_data).starting_ui_data.info_text = format!($($arg)*)
+        mutex_lock!(ui_data).starting_ui_data.info_text = format!($($arg)*)
         }
 
         starting_info_text!("Checking cdrskin...");
@@ -264,13 +264,7 @@ impl<B: Backend> Tui<B> {
         };
 
         starting_info_text!("cdrskin version: {version}; Fetching tracks info...");
-        let tracks = match cdrskin_medium_track_info() {
-            Ok(t) => t,
-            Err(e) => {
-                // TODO: errors from `cdrskin`
-                yeet!(anyhow!("{}", e))
-            }
-        };
+        let tracks = cdrskin_medium_track_info()?;
         let tracks = Arc::new(tracks);
         mutex_lock!(ui_data).tracks = Arc::clone(&tracks);
 
@@ -371,10 +365,10 @@ impl<B: Backend> Tui<B> {
                     }
                 };
                 macro track_offset($track_no:expr) {
-                    ui_data_guard.tracks[$track_no - 1].start_addr * SECTOR_SIZE
+                ui_data_guard.tracks[$track_no - 1].start_addr * SECTOR_SIZE
                 }
                 macro player_command_tx() {
-                    ui_data_guard.player_command_tx.as_ref().unwrap()
+                ui_data_guard.player_command_tx.as_ref().unwrap()
                 }
 
                 if ui_data_guard.ui_state == AppUiState::Player {

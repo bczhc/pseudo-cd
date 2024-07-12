@@ -4,11 +4,13 @@
 #![feature(byte_slice_trim_ascii)]
 #![feature(let_chains)]
 
+extern crate core;
+
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
-use std::process::{Command, Stdio};
-use anyhow::anyhow;
+use std::process::{Command, ExitCode, ExitStatus, Stdio};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -17,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use crate::cli::ARGS;
 
 pub mod cli;
-pub mod tui;
 pub mod playback;
+pub mod tui;
 
 /// The sector size optical discs use is 2048 bytes.
 const SECTOR_SIZE: u64 = 2048;
@@ -51,16 +53,54 @@ pub struct Track {
     pub size: u64,
 }
 
+#[derive(Debug)]
+struct ProgramError {
+    stdout: String,
+    stderr: String,
+    exit_status: ExitStatus,
+}
+
+impl ProgramError {
+    fn new(exit_status: ExitStatus, stderr: String, stdout: String) -> ProgramError {
+        Self {
+            exit_status,
+            stderr,
+            stdout,
+        }
+    }
+}
+
+impl Display for ProgramError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if !self.exit_status.success() {
+            writeln!(f, "Non-zero exit status: {:?}", self.exit_status.code())?;
+        }
+        writeln!(f)?;
+        writeln!(f, "Stderr:")?;
+        writeln!(f, "{}\n\n", self.stderr)?;
+        writeln!(f, "Stdout:")?;
+        writeln!(f, "{}\n", self.stdout)?;
+        Ok(())
+    }
+}
+
+impl std::error::Error for ProgramError {}
+
 fn execute_command_with_output(cmd: &[&str]) -> io::Result<String> {
     assert!(!cmd.is_empty());
     let output = Command::new(cmd[0])
         .args(cmd.iter().skip(1))
         .stdout(Stdio::piped())
-        .stderr(Stdio::null()) /* suppress stderr output */
+        .stderr(Stdio::piped())
         .spawn()?
         .wait_with_output()?;
+
     if !output.status.success() {
-        return Err(io::Error::other(anyhow!("Non-zero exit status")));
+        return Err(io::Error::other(ProgramError::new(
+            output.status,
+            format!("{}", String::from_utf8_lossy(&output.stderr)),
+            format!("{}", String::from_utf8_lossy(&output.stdout)),
+        )));
     }
     Ok(String::from_utf8(output.stdout).expect("Invalid UTF-8 met"))
 }

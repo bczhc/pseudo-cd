@@ -775,7 +775,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pseudo-cd"
+name = "pseudo-cd-player"
 version = "0.1.0"
 dependencies = [
  "anyhow",
