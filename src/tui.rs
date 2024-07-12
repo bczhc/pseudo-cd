@@ -88,12 +88,8 @@ struct PlayerUiData {
 }
 
 impl PlayerUiData {
-    fn song_name_by_track_no(&self, track_no: usize) -> &str {
-        &self.meta_info.list[track_no].name
-    }
-
     fn song_name_by_song_idx(&self, idx: usize) -> &str {
-        &self.meta_info.list[self.meta_info.list[idx].session_no - 1].name
+        &self.meta_info.list[idx].name
     }
 
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {
@@ -136,7 +132,7 @@ impl PlayerUiData {
                 .title_alignment(Alignment::Center),
             layout[1],
         );
-        
+
         fn non_nan(ratio: f64) -> f64 {
             if ratio.is_nan() {
                 return 0.0;
