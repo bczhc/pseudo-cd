@@ -123,7 +123,7 @@ Sess 2.
 
 ## Screenshot
 
-<img width="70%" alt="image" src="https://github.com/user-attachments/assets/a6317df1-65ae-4039-b865-7ed2d6bae724">
+<img width="100%" alt="image" src="https://github.com/user-attachments/assets/a6317df1-65ae-4039-b865-7ed2d6bae724">
 
 ## TUI Key Bindings
 
@@ -133,6 +133,8 @@ n: Next
 p: Previous
 j, ArrowDown: Selection move up
 k, ArrowUp: Selection move down
+g, Home: Move selection to the first
+G, End: Move selection to the last
 h, ArrowLeft: Seek backwards 5 seconds
 l, ArrowRight: Seek forward 5 seconds
 Enter: Play the selection
