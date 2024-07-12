@@ -85,6 +85,7 @@ struct PlayerUiData {
     meta_info: Arc<MetaInfo>,
     current_position: u32,
     total_duration: u32,
+    volume: f64,
 }
 
 impl PlayerUiData {
@@ -146,6 +147,12 @@ impl PlayerUiData {
                 .title(bottom_title.as_str())
                 .title_alignment(Alignment::Center),
             layout[1],
+        );
+        
+        frame.render_widget(Block::new()
+            .title(format!("Volume: {}", (self.volume * 100.0) as u8))
+            .title_alignment(Alignment::Right),
+            layout[1]
         );
 
         fn coerce(ratio: f64) -> f64 {
@@ -229,6 +236,7 @@ impl Default for UiData {
                 meta_info: Default::default(),
                 current_position: 0,
                 total_duration: 0,
+                volume: 1.0,
             },
             any_key_to_exit: false,
             disc_tracks: Default::default(),
@@ -289,7 +297,7 @@ pub fn clean_up_and_exit() {
     let PlayerResult::Stopped = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::StopAndWait) else {
         panic!("Unexpected player result");
     };
-    
+
     let _ = clean_up_tui();
     drop(mutex_lock!(AUDIO_STREAM).take());
     exit(0);
@@ -417,6 +425,7 @@ impl<B: Backend> Tui<B> {
 
     /// ## Key bindings
     ///
+    /// <pre>
     /// Space: Play/Pause
     /// n: Next
     /// p: Previous
@@ -425,6 +434,9 @@ impl<B: Backend> Tui<B> {
     /// h, ArrowLeft: Seek backwards 5 seconds
     /// l, ArrowRight: Seek forward 5 seconds
     /// Enter: Play the selection
+    /// ,: Volume down
+    /// .: Volume up
+    /// </pre>
     pub fn handle_events(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
@@ -538,6 +550,26 @@ impl<B: Backend> Tui<B> {
                             };
                             let toggle = !paused;
                             player_send!(PlayerCommand::SetPaused(toggle));
+                        }
+                        KeyCode::Char(',') => {
+                            // volume down
+                            let mut guard = ui_data_guard!();
+                            let volume = &mut guard.player_ui_data.volume;
+                            *volume -= 0.01;
+                            if *volume <= 0.0 {
+                                *volume = 0.0;
+                            }
+                            player_send!(PlayerCommand::ChangeVolume(*volume));
+                        }
+                        KeyCode::Char('.') => {
+                            // volume up
+                            let mut guard = ui_data_guard!();
+                            let volume = &mut guard.player_ui_data.volume;
+                            *volume += 0.01;
+                            if *volume >= 1.0 {
+                                *volume = 1.0;
+                            }
+                            player_send!(PlayerCommand::ChangeVolume(*volume));
                         }
                         _ => {}
                     }

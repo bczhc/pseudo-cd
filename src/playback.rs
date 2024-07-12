@@ -174,6 +174,7 @@ pub fn start_global_playback_thread<D, F>(
         let mut start_pos = 0_u64;
         let mut end_pos = 0_u64;
         let mut song_seconds = 0_u32;
+        let mut volume = 1.0;
         let event_callback = event_callback;
         let callback_data = callback_data;
         macro event_callback($($arg:tt)*) {
@@ -242,8 +243,8 @@ pub fn start_global_playback_thread<D, F>(
                         panic!("{}", e);
                     }
                 }
-                Ok(PlayerCommand::ChangeVolume(level)) => {
-                    todo!()
+                Ok(PlayerCommand::ChangeVolume(v)) => {
+                    volume = v;
                 }
                 Ok(PlayerCommand::StopAndWait) => {
                     result_tx.send(PlayerResult::Stopped).unwrap();
@@ -259,6 +260,7 @@ pub fn start_global_playback_thread<D, F>(
                     continue;
                 }
                 let sample = r.read_i16::<LE>().unwrap();
+                let sample = (sample as f64 * volume) as i16;
                 sample_tx.send(sample).unwrap();
 
                 if (pos - start_pos) % (BYTES_ONE_SEC) == 0 {
