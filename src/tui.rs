@@ -19,7 +19,7 @@ use ratatui::{Frame, symbols, Terminal};
 use yeet_ops::yeet;
 
 use crate::cli::ARGS;
-use crate::playback::{start_global_playback_thread, PlayerCommand, PlayerResult, AUDIO_STREAM, set_global_playback_handle, PLAYBACK_HANDLE, PlayerCallbackEvent};
+use crate::playback::{start_global_playback_thread, PlayerCommand, PlayerResult, AUDIO_STREAM, set_global_playback_handle, PLAYBACK_HANDLE, PlayerCallbackEvent, duration_from_bytes};
 use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, Track, SECTOR_SIZE, SongInfo, MetaInfo};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
@@ -449,6 +449,9 @@ impl<B: Backend> Tui<B> {
                     let song_track = ui_data_guard.disc_tracks[ui_data_guard.meta_info.list[playing_song_idx].session_no - 1];
                     player_send!(PlayerCommand::Goto(song_track, true))
                 }
+                macro playing_track() {
+                    ui_data_guard.disc_tracks[ui_data_guard.meta_info.list[ui_data_guard.player_ui_data.playing_song_idx].session_no - 1]
+                }
 
                 if ui_data_guard.ui_state == AppUiState::Player {
                     match key.code {
@@ -472,16 +475,26 @@ impl<B: Backend> Tui<B> {
                         }
                         KeyCode::Char('h') | KeyCode::Left => {
                             //seek backwards
-                            let PlayerResult::Position(p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
+                            let PlayerResult::Position(mut p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
                                 panic!("Unexpected player result")
                             };
-                            player_send!(PlayerCommand::Seek(p - 5.0));
+                            p -= 5.0;
+                            if p < 0.0 {
+                                p = 0.0;
+                            }
+                            player_send!(PlayerCommand::Seek(p));
                         }
                         KeyCode::Char('l') | KeyCode::Right => {
-                            let PlayerResult::Position(p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
+                            let PlayerResult::Position(mut p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
                                 panic!("Unexpected player result")
                             };
-                            player_send!(PlayerCommand::Seek(p + 5.0));
+                            let song_track = playing_track!();
+                            let duration = duration_from_bytes(song_track.size_bytes());
+                            p += 5.0;
+                            if p >= duration {
+                                p = duration - 1.0;
+                            }
+                            player_send!(PlayerCommand::Seek(p));
                         }
                         KeyCode::Enter => {
                             ui_data_guard.player_ui_data.playing_song_idx = ui_data_guard.player_ui_data.selected_song_idx;

@@ -63,6 +63,11 @@ impl Track {
     pub fn end_offset(&self) -> u64 {
         self.end_addr * SECTOR_SIZE
     }
+    
+    /// Track length in bytes
+    pub fn size_bytes(&self) -> u64 {
+        self.size * SECTOR_SIZE
+    }
 }
 
 #[derive(Debug)]

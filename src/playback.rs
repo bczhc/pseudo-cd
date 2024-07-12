@@ -20,6 +20,13 @@ pub const AUDIO_SAMPLE_RATE: u32 = 44100;
 pub const AUDIO_BIT_DEPTH: u32 = 16;
 pub const AUDIO_CHANNELS: u32 = 2;
 
+const SAMPLES_ONE_SEC: u64 = AUDIO_SAMPLE_RATE as u64 * AUDIO_CHANNELS as u64;
+const BYTES_ONE_SEC: u64 = SAMPLES_ONE_SEC * AUDIO_BIT_DEPTH as u64 / 8;
+
+pub fn duration_from_bytes(size: u64) -> f64 {
+    size as f64 / BYTES_ONE_SEC as f64
+}
+
 pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
     let (tx, rx) = sync_channel(AUDIO_SAMPLE_RATE as usize);
 
@@ -160,8 +167,6 @@ pub fn start_global_playback_thread<D, F>(
         let mut song_seconds = 0_u32;
         let event_callback = event_callback;
         let callback_data = callback_data;
-        const SAMPLES_ONE_SEC: u64 = AUDIO_SAMPLE_RATE as u64 * AUDIO_CHANNELS as u64;
-        const BYTES_ONE_SEC: u64 = SAMPLES_ONE_SEC * AUDIO_BIT_DEPTH as u64 / 8;
         macro event_callback($($arg:tt)*) {
             if let Some(x) = event_callback.as_ref() { x($($arg)*, &callback_data) }
         }
