@@ -116,6 +116,7 @@ impl PlayerUiData {
         ])
         .split(rect);
 
+        let list_height = layout[0].height;
         let list_items = self.meta_info.list.iter().enumerate().map(|(i, x)| {
             let item_text = format!("{}: {}", i + 1, x.name);
             let mut item = ListItem::new(item_text);
@@ -140,7 +141,8 @@ impl PlayerUiData {
             }
             item
         });
-        let list = List::new(list_items);
+        let page_no = self.selected_song_idx / list_height as usize;
+        let list = List::new(list_items.skip(page_no * list_height as usize));
         frame.render_widget(list, layout[0]);
 
         let state_str = match self.player_state {
