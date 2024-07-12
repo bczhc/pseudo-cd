@@ -355,7 +355,8 @@ impl<B: Backend> Tui<B> {
                         mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send(PlayerCommand::Goto(next_track, true));
                     }
                     PlayerCallbackEvent::Paused(paused) => {
-                        mutex_lock!(ui_data).player_ui_data.player_state = PlayerState::from_paused(paused);
+                        let mut guard = mutex_lock!(ui_data);
+                        guard.player_ui_data.player_state = PlayerState::from_paused(paused);
                     }
                     PlayerCallbackEvent::Progress(current, total) => {
                         let mut guard = mutex_lock!(ui_data);
@@ -423,8 +424,10 @@ impl<B: Backend> Tui<B> {
     pub fn handle_events(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                let mut ui_data_guard = mutex_lock!(self.ui_data);
-                let song_number = ui_data_guard.meta_info.list.len();
+                macro ui_data_guard() {
+                    mutex_lock!(self.ui_data)
+                }
+                let song_number = ui_data_guard!().meta_info.list.len();
 
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                     // Ctrl-C pressed
@@ -433,7 +436,7 @@ impl<B: Backend> Tui<B> {
                 if key.kind == event::KeyEventKind::Press && key.code == KeyCode::Char('q') {
                     self.should_quit = true;
                 }
-                if ui_data_guard.any_key_to_exit {
+                if ui_data_guard!().any_key_to_exit {
                     self.should_quit = true;
                 }
 
@@ -455,23 +458,27 @@ impl<B: Backend> Tui<B> {
                     mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send($cmd);
                 }
                 macro index_inc($tt:tt) {{
-                    let idx = &mut ui_data_guard.player_ui_data.$tt;
+                    let mut guard = ui_data_guard!();
+                    let idx = &mut guard.player_ui_data.$tt;
                     *idx = wrapping_next(*idx);
                 }}
                 macro index_dec($tt:tt) {{
-                    let idx = &mut ui_data_guard.player_ui_data.$tt;
+                    let mut guard = ui_data_guard!();
+                    let idx = &mut guard.player_ui_data.$tt;
                     *idx = wrapping_prev(*idx);
                 }}
-                macro player_goto_playing_one() {
-                    let playing_song_idx = ui_data_guard.player_ui_data.playing_song_idx;
-                    let song_track = ui_data_guard.disc_tracks[ui_data_guard.meta_info.list[playing_song_idx].session_no - 1];
-                    player_send!(PlayerCommand::Goto(song_track, true))
-                }
-                macro playing_track() {
-                    ui_data_guard.disc_tracks[ui_data_guard.meta_info.list[ui_data_guard.player_ui_data.playing_song_idx].session_no - 1]
-                }
+                macro player_goto_playing_one() {{
+                    let guard = ui_data_guard!();
+                    let playing_song_idx = guard.player_ui_data.playing_song_idx;
+                    let song_track = guard.disc_tracks[guard.meta_info.list[playing_song_idx].session_no - 1];
+                    player_send!(PlayerCommand::Goto(song_track, true));
+                }}
+                macro playing_track() {{
+                    let guard = ui_data_guard!();
+                    guard.disc_tracks[guard.meta_info.list[guard.player_ui_data.playing_song_idx].session_no - 1]
+                }}
 
-                if ui_data_guard.ui_state == AppUiState::Player {
+                if ui_data_guard!().ui_state == AppUiState::Player {
                     match key.code {
                         KeyCode::Char('n') => {
                             // next
@@ -515,7 +522,10 @@ impl<B: Backend> Tui<B> {
                             player_send!(PlayerCommand::Seek(p));
                         }
                         KeyCode::Enter => {
-                            ui_data_guard.player_ui_data.playing_song_idx = ui_data_guard.player_ui_data.selected_song_idx;
+                            {
+                                let mut guard = ui_data_guard!();
+                                guard.player_ui_data.playing_song_idx = guard.player_ui_data.selected_song_idx;
+                            }
                             player_goto_playing_one!();
                         }
                         KeyCode::Char(' ') => {

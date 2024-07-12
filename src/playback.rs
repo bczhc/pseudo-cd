@@ -9,6 +9,7 @@ use anyhow::anyhow;
 use byteorder::{LE, ReadBytesExt};
 use cpal::{Sample, SampleFormat, SampleRate, Stream};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use log::debug;
 use once_cell::sync::Lazy;
 
 use crate::{mutex_lock, SECTOR_SIZE, Track};
@@ -133,7 +134,9 @@ impl PlaybackHandle {
     }
 
     pub fn player_result(&self) -> PlayerResult {
-        mutex_lock!(self.result_rx).recv().unwrap()
+        let guard = mutex_lock!(self.result_rx);
+        let result = guard.recv().unwrap();
+        result
     }
 
     pub fn send_recv(&self, cmd: PlayerCommand) -> PlayerResult {
@@ -188,7 +191,7 @@ pub fn start_global_playback_thread<D, F>(
                     start_pos = track.start_offset();
                     end_pos = track.end_offset();
                     song_seconds = ((end_pos - start_pos) / BYTES_ONE_SEC) as u32;
-                    event_callback!(PlayerCallbackEvent::Progress(0, song_seconds))
+                    event_callback!(PlayerCallbackEvent::Progress(0, song_seconds));
                 }
                 Ok(PlayerCommand::Pause) => {
                     paused = true;
@@ -239,7 +242,7 @@ pub fn start_global_playback_thread<D, F>(
             }
             if !paused && let Some(ref mut r) = reader {
                 let pos = r.stream_position().unwrap();
-                
+
                 if pos >= end_pos {
                     // reach the end of the playing song
                     event_callback!(PlayerCallbackEvent::Finished);
