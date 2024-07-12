@@ -1,12 +1,12 @@
 #![feature(yeet_expr)]
 
 use clap::Parser;
+use log::info;
 use std::io::stdout;
 use std::panic;
 use std::panic::take_hook;
-use std::process::exit;
+
 use std::thread::spawn;
-use log::{debug, info};
 
 use pseudo_cd_player::cli::{Args, ARGS};
 use pseudo_cd_player::{mutex_lock, set_up_logging};
@@ -46,7 +46,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(ref f) = args.log_file {
         set_up_logging(f)?;
     }
-    
+
     info!("Args: {:?}", args);
     *mutex_lock!(ARGS) = args;
 

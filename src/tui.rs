@@ -1,9 +1,9 @@
+use std::io;
 use std::io::stdout;
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
-use std::io;
 
 use anyhow::anyhow;
 use ratatui::backend::Backend;
@@ -14,13 +14,19 @@ use ratatui::crossterm::terminal::{
 use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::prelude::{Color, Layout, Modifier, Style};
-use ratatui::widgets::{Block, Borders, LineGauge, List, ListItem, Padding, Paragraph};
-use ratatui::{Frame, symbols, Terminal};
+use ratatui::widgets::{Block, LineGauge, List, ListItem, Padding, Paragraph};
+use ratatui::{Frame, Terminal};
 use yeet_ops::yeet;
 
 use crate::cli::ARGS;
-use crate::playback::{start_global_playback_thread, PlayerCommand, PlayerResult, AUDIO_STREAM, set_global_playback_handle, PLAYBACK_HANDLE, PlayerCallbackEvent, duration_from_bytes};
-use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, Track, SECTOR_SIZE, SongInfo, MetaInfo};
+use crate::playback::{
+    duration_from_bytes, set_global_playback_handle, start_global_playback_thread,
+    PlayerCallbackEvent, PlayerCommand, PlayerResult, AUDIO_STREAM, PLAYBACK_HANDLE,
+};
+use crate::{
+    cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, MetaInfo,
+    Track,
+};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
@@ -72,7 +78,7 @@ impl PlayerState {
     fn from_paused(paused: bool) -> Self {
         match paused {
             true => Self::Paused,
-            false => Self::Playing
+            false => Self::Playing,
         }
     }
 }
@@ -102,12 +108,13 @@ impl PlayerUiData {
         }
     }
 
-    fn next_song(&self) -> &SongInfo {
-        &self.meta_info.list[self.next_song_idx()]
-    }
-
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {
-        let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(1), Constraint::Length(1)]).split(rect);
+        let layout = Layout::vertical([
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(rect);
 
         let list_items = self.meta_info.list.iter().enumerate().map(|(i, x)| {
             let item_text = format!("{}: {}", i + 1, x.name);
@@ -140,7 +147,10 @@ impl PlayerUiData {
             PlayerState::Playing => "Playing: ",
             PlayerState::Paused => "Paused: ",
         };
-        let bottom_title = format!("{state_str}{}", self.song_name_by_song_idx(self.playing_song_idx));
+        let bottom_title = format!(
+            "{state_str}{}",
+            self.song_name_by_song_idx(self.playing_song_idx)
+        );
 
         frame.render_widget(
             Block::new()
@@ -149,32 +159,35 @@ impl PlayerUiData {
             layout[1],
         );
 
-        frame.render_widget(Block::new()
-            .title(format!("Volume: {}", (self.volume * 100.0) as u8))
-            .title_alignment(Alignment::Right),
-            layout[1]
+        frame.render_widget(
+            Block::new()
+                .title(format!("Volume: {}", (self.volume * 100.0) as u8))
+                .title_alignment(Alignment::Right),
+            layout[1],
         );
 
         fn coerce(ratio: f64) -> f64 {
             match ratio {
-                _ if !ratio.is_finite() => {
-                    0.0
-                }
-                _ if ratio < 0.0 => {
-                    0.0
-                }
-                _ if ratio > 1.0 => {
-                    1.0
-                }
-                _ => ratio
+                _ if !ratio.is_finite() => 0.0,
+                _ if ratio < 0.0 => 0.0,
+                _ if ratio > 1.0 => 1.0,
+                _ => ratio,
             }
         }
 
-        frame.render_widget(LineGauge::default()
-                                .filled_style(Style::default().fg(Color::Blue))
-                                .unfilled_style(Style::default().fg(Color::Gray))
-                                .label(duration_string((self.current_position, self.total_duration)))
-                                .ratio(coerce(self.current_position as f64 / self.total_duration as f64)), layout[2]);
+        frame.render_widget(
+            LineGauge::default()
+                .filled_style(Style::default().fg(Color::Blue))
+                .unfilled_style(Style::default().fg(Color::Gray))
+                .label(duration_string((
+                    self.current_position,
+                    self.total_duration,
+                )))
+                .ratio(coerce(
+                    self.current_position as f64 / self.total_duration as f64,
+                )),
+            layout[2],
+        );
     }
 }
 
@@ -186,9 +199,7 @@ fn duration_string((position, total): (u32, u32)) -> String {
             format!("{num}")
         }
     };
-    let make_string = |num: u32| {
-        format!("{}:{}", pad_zero(num / 60), pad_zero(num % 60))
-    };
+    let make_string = |num: u32| format!("{}:{}", pad_zero(num / 60), pad_zero(num % 60));
     format!("{}/{}", make_string(position), make_string(total))
 }
 
@@ -294,7 +305,11 @@ pub fn clean_up_tui() -> io::Result<()> {
 }
 
 pub fn clean_up_and_exit() {
-    let PlayerResult::Stopped = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::StopAndWait) else {
+    let PlayerResult::Stopped = mutex_lock!(PLAYBACK_HANDLE)
+        .as_ref()
+        .unwrap()
+        .send_recv(PlayerCommand::StopAndWait)
+    else {
         panic!("Unexpected player result");
     };
 
@@ -356,27 +371,28 @@ impl<B: Backend> Tui<B> {
         let playback_handle = start_global_playback_thread(
             mutex_lock!(ARGS).drive.clone(),
             ui_data_for_player_callback,
-            Some(|event, ui_data: &Arc<Mutex<UiData>>| {
-                match event {
-                    PlayerCallbackEvent::Finished => {
-                        let mut guard = mutex_lock!(ui_data);
-                        let next_song_idx = guard.player_ui_data.next_song_idx();
-                        let next_song = &guard.player_ui_data.meta_info.list[next_song_idx];
-                        let next_track = guard.disc_tracks[next_song.session_no - 1];
-                        guard.player_ui_data.playing_song_idx = next_song_idx;
-                        mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send(PlayerCommand::Goto(next_track, true));
-                    }
-                    PlayerCallbackEvent::Paused(paused) => {
-                        let mut guard = mutex_lock!(ui_data);
-                        guard.player_ui_data.player_state = PlayerState::from_paused(paused);
-                    }
-                    PlayerCallbackEvent::Progress(current, total) => {
-                        let mut guard = mutex_lock!(ui_data);
-                        guard.player_ui_data.current_position = current;
-                        guard.player_ui_data.total_duration = total;
-                    }
+            Some(|event, ui_data: &Arc<Mutex<UiData>>| match event {
+                PlayerCallbackEvent::Finished => {
+                    let mut guard = mutex_lock!(ui_data);
+                    let next_song_idx = guard.player_ui_data.next_song_idx();
+                    let next_song = &guard.player_ui_data.meta_info.list[next_song_idx];
+                    let next_track = guard.disc_tracks[next_song.session_no - 1];
+                    guard.player_ui_data.playing_song_idx = next_song_idx;
+                    mutex_lock!(PLAYBACK_HANDLE)
+                        .as_ref()
+                        .unwrap()
+                        .send(PlayerCommand::Goto(next_track, true));
                 }
-            })
+                PlayerCallbackEvent::Paused(paused) => {
+                    let mut guard = mutex_lock!(ui_data);
+                    guard.player_ui_data.player_state = PlayerState::from_paused(paused);
+                }
+                PlayerCallbackEvent::Progress(current, total) => {
+                    let mut guard = mutex_lock!(ui_data);
+                    guard.player_ui_data.current_position = current;
+                    guard.player_ui_data.total_duration = total;
+                }
+            }),
         )?;
         set_global_playback_handle(playback_handle);
 
@@ -387,10 +403,13 @@ impl<B: Backend> Tui<B> {
 
         // play the first track initially
         if let Some(first_song) = meta_info.list.first() {
-            mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_commands([
-                PlayerCommand::Start,
-                PlayerCommand::Goto(tracks[first_song.session_no - 1], true)
-            ]);
+            mutex_lock!(PLAYBACK_HANDLE)
+                .as_ref()
+                .unwrap()
+                .send_commands([
+                    PlayerCommand::Start,
+                    PlayerCommand::Goto(tracks[first_song.session_no - 1], true),
+                ]);
         }
 
         Ok(())
@@ -493,7 +512,8 @@ impl<B: Backend> Tui<B> {
                 }}
                 macro playing_track() {{
                     let guard = ui_data_guard!();
-                    guard.disc_tracks[guard.meta_info.list[guard.player_ui_data.playing_song_idx].session_no - 1]
+                    guard.disc_tracks
+                        [guard.meta_info.list[guard.player_ui_data.playing_song_idx].session_no - 1]
                 }}
 
                 if ui_data_guard!().ui_state == AppUiState::Player {
@@ -518,7 +538,11 @@ impl<B: Backend> Tui<B> {
                         }
                         KeyCode::Char('h') | KeyCode::Left => {
                             //seek backwards
-                            let PlayerResult::Position(mut p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
+                            let PlayerResult::Position(mut p) = mutex_lock!(PLAYBACK_HANDLE)
+                                .as_ref()
+                                .unwrap()
+                                .send_recv(PlayerCommand::GetPosition)
+                            else {
                                 panic!("Unexpected player result")
                             };
                             p -= 5.0;
@@ -528,7 +552,11 @@ impl<B: Backend> Tui<B> {
                             player_send!(PlayerCommand::Seek(p));
                         }
                         KeyCode::Char('l') | KeyCode::Right => {
-                            let PlayerResult::Position(mut p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
+                            let PlayerResult::Position(mut p) = mutex_lock!(PLAYBACK_HANDLE)
+                                .as_ref()
+                                .unwrap()
+                                .send_recv(PlayerCommand::GetPosition)
+                            else {
                                 panic!("Unexpected player result")
                             };
                             let song_track = playing_track!();
@@ -542,12 +570,17 @@ impl<B: Backend> Tui<B> {
                         KeyCode::Enter => {
                             {
                                 let mut guard = ui_data_guard!();
-                                guard.player_ui_data.playing_song_idx = guard.player_ui_data.selected_song_idx;
+                                guard.player_ui_data.playing_song_idx =
+                                    guard.player_ui_data.selected_song_idx;
                             }
                             player_goto_playing_one!();
                         }
                         KeyCode::Char(' ') => {
-                            let PlayerResult::IsPaused(paused) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetIsPaused) else {
+                            let PlayerResult::IsPaused(paused) = mutex_lock!(PLAYBACK_HANDLE)
+                                .as_ref()
+                                .unwrap()
+                                .send_recv(PlayerCommand::GetIsPaused)
+                            else {
                                 panic!("Unexpected player result")
                             };
                             let toggle = !paused;

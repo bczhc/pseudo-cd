@@ -1,18 +1,18 @@
 use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::sync::{Arc, Condvar, Mutex};
-use std::sync::mpsc::{channel, Receiver, sync_channel, SyncSender, TryRecvError};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
 use anyhow::anyhow;
-use byteorder::{LE, ReadBytesExt};
-use cpal::{Sample, SampleFormat, SampleRate, Stream};
+use byteorder::{ReadBytesExt, LE};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use log::debug;
+use cpal::{Sample, SampleFormat, SampleRate, Stream};
+
 use once_cell::sync::Lazy;
 
-use crate::{mutex_lock, SECTOR_SIZE, Track};
+use crate::{mutex_lock, Track};
 
 /// We place [`Stream`] here just to prevent it from dropping
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));
@@ -141,8 +141,8 @@ impl PlaybackHandle {
 
     pub fn player_result(&self) -> PlayerResult {
         let guard = mutex_lock!(self.result_rx);
-        let result = guard.recv().unwrap();
-        result
+
+        guard.recv().unwrap()
     }
 
     pub fn send_recv(&self, cmd: PlayerCommand) -> PlayerResult {
@@ -158,14 +158,16 @@ pub fn set_global_playback_handle(playback_handle: PlaybackHandle) {
 pub fn start_global_playback_thread<D, F>(
     drive: PathBuf,
     callback_data: D,
-    event_callback: Option<F>
-) -> anyhow::Result<PlaybackHandle> where
+    event_callback: Option<F>,
+) -> anyhow::Result<PlaybackHandle>
+where
     D: Send + 'static,
-    F: Fn(PlayerCallbackEvent, &D) + Send + 'static {
+    F: Fn(PlayerCallbackEvent, &D) + Send + 'static,
+{
     let (cmd_tx, cmd_rx) = sync_channel::<PlayerCommand>(1);
     let (result_tx, result_rx) = sync_channel::<PlayerResult>(1);
     let result_rx = Arc::new(Mutex::new(result_rx));
-    
+
     let (stream, sample_tx) = create_audio_stream()?;
     mutex_lock!(AUDIO_STREAM).replace(StreamSendWrapper(stream));
     spawn(move || {
@@ -215,9 +217,7 @@ pub fn start_global_playback_thread<D, F>(
                 }
                 Ok(PlayerCommand::GetPosition) => {
                     let position = match &mut reader {
-                        None => {
-                            0.0
-                        }
+                        None => 0.0,
                         Some(r) => {
                             (r.stream_position().unwrap() - start_pos) as f64 / BYTES_ONE_SEC as f64
                         }
@@ -233,7 +233,10 @@ pub fn start_global_playback_thread<D, F>(
                         }
                         let seek_pos = start_pos + one_sec_samples * AUDIO_BIT_DEPTH as u64 / 8;
                         reader.seek(SeekFrom::Start(seek_pos)).unwrap();
-                        event_callback!(PlayerCallbackEvent::Progress(((seek_pos - start_pos) / BYTES_ONE_SEC) as u32, song_seconds));
+                        event_callback!(PlayerCallbackEvent::Progress(
+                            ((seek_pos - start_pos) / BYTES_ONE_SEC) as u32,
+                            song_seconds
+                        ));
                     }
                 }
                 Err(e) => {
@@ -269,6 +272,6 @@ pub fn start_global_playback_thread<D, F>(
     });
     Ok(PlaybackHandle {
         command_tx: cmd_tx,
-        result_rx
+        result_rx,
     })
 }
