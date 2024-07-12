@@ -44,7 +44,7 @@ lazy_regex!(
 );
 
 /// [start_addr], [end_addr] and [size] are in sectors (see [SECTOR_SIZE])
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Track {
     pub track_no: u32,
     pub session_no: u32,
@@ -138,18 +138,25 @@ pub fn cdrskin_medium_track_info() -> io::Result<Vec<Track>> {
     Ok(tracks)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct SongInfo {
+    name: String,
+    /// Session numbers start from one
+    session_no: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct MetaInfo {
     title: String,
     creation_time: u64,
-    list: Vec<String>,
+    list: Vec<SongInfo>,
 }
 
 /// Extracts the meta info from [track]
 ///
 /// The meta info is a JSON.
 /// Just read out all the text until a NUL ('\0').
-pub fn extract_meta_info(track: &Track) -> io::Result<MetaInfo> {
+pub fn extract_meta_info(track: Track) -> io::Result<MetaInfo> {
     let mut disc_file = File::open(&mutex_lock!(ARGS).drive)?;
     disc_file.seek(SeekFrom::Start(track.start_addr * SECTOR_SIZE))?;
     let bytes = disc_file

@@ -11,7 +11,7 @@ use cpal::{Sample, SampleFormat, SampleRate, Stream};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use once_cell::sync::Lazy;
 
-use crate::mutex_lock;
+use crate::{mutex_lock, Track};
 
 /// We place [`Stream`] here just to prevent it from dropping
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));

@@ -20,10 +20,7 @@ use yeet_ops::yeet;
 
 use crate::cli::ARGS;
 use crate::playback::{start_global_playback_thread, PlayerCommand, PlayerResult, AUDIO_STREAM, set_global_playback_handle, PLAYBACK_HANDLE};
-use crate::{
-    cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, Track,
-    SECTOR_SIZE,
-};
+use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, Track, SECTOR_SIZE, SongInfo, MetaInfo};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
 
@@ -73,21 +70,25 @@ enum PlayerState {
 
 #[derive(Clone, Debug)]
 struct PlayerUiData {
-    song_list: Vec<String>,
     player_state: PlayerState,
-    selected_track: usize,
-    playing_track: usize,
+    selected_song_idx: usize,
+    playing_song_idx: usize,
+    meta_info: Arc<MetaInfo>,
 }
 
 impl PlayerUiData {
+    fn song_name(&self, track_no: usize) -> &str {
+        &self.meta_info.list[track_no].name
+    }
+
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {
         let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(rect);
 
-        let list_items = self.song_list.iter().enumerate().map(|(i, x)| {
-            let item_text = format!("{}: {}", i + 1, x);
+        let list_items = self.meta_info.list.iter().enumerate().map(|(i, x)| {
+            let item_text = format!("{}: {}", i + 1, x.name);
             let mut item = ListItem::new(item_text);
             // TODO: not consider terminal themes like white-background-black-text?
-            if self.selected_track - 1 == i {
+            if self.selected_song_idx == i {
                 let style = Style {
                     bg: Some(Color::Gray),
                     fg: Some(Color::White),
@@ -95,7 +96,7 @@ impl PlayerUiData {
                 };
                 item = item.style(style);
             }
-            if self.playing_track - 1 == i {
+            if self.playing_song_idx == i {
                 let style = Style {
                     bg: Some(Color::White),
                     fg: Some(Color::Black),
@@ -112,7 +113,7 @@ impl PlayerUiData {
             PlayerState::Playing => "Playing: ",
             PlayerState::Paused => "Paused: ",
         };
-        let bottom_title = format!("{state_str}{}", self.song_list[self.playing_track - 1]);
+        let bottom_title = format!("{state_str}{}", self.meta_info.list[self.playing_song_idx].name);
 
         frame.render_widget(
             Block::new()
@@ -149,8 +150,9 @@ pub struct UiData {
     player_ui_data: PlayerUiData,
     error_ui_data: ErrorUiData,
     any_key_to_exit: bool,
-    // FIXME: clarify audio "tracks" and meta info "track"
-    tracks: Arc<Vec<Track>>,
+    /// tracks info (precisely for DVDs it's "sessions") from `cdrskin -minfo`
+    disc_tracks: Arc<Vec<Track>>,
+    meta_info: Arc<MetaInfo>,
 }
 
 impl Default for UiData {
@@ -161,17 +163,18 @@ impl Default for UiData {
                 info_text: "Initializing...".into(),
             },
             player_ui_data: PlayerUiData {
-                song_list: Default::default(),
-                selected_track: 1,
-                playing_track: 1,
+                playing_song_idx: 0,
+                selected_song_idx: 0,
                 player_state: PlayerState::Playing,
+                meta_info: Default::default(),
             },
             any_key_to_exit: false,
+            disc_tracks: Default::default(),
             error_ui_data: ErrorUiData {
                 title: "",
                 content: "".into(),
             },
-            tracks: Arc::new(vec![]),
+            meta_info: Arc::new(Default::default()),
         }
     }
 }
@@ -256,7 +259,7 @@ impl<B: Backend> Tui<B> {
         starting_info_text!("cdrskin version: {version}; Fetching tracks info...");
         let tracks = cdrskin_medium_track_info()?;
         let tracks = Arc::new(tracks);
-        mutex_lock!(ui_data).tracks = Arc::clone(&tracks);
+        mutex_lock!(ui_data).disc_tracks = Arc::clone(&tracks);
 
         starting_info_text!("Tracks fetched. Extracting meta info...");
 
@@ -270,7 +273,9 @@ impl<B: Backend> Tui<B> {
                     tracks.len()
                 )
             })?;
-        let meta_info = extract_meta_info(meta_info_track)?;
+        let meta_info = Arc::new(extract_meta_info(*meta_info_track)?);
+        mutex_lock!(ui_data).meta_info = Arc::clone(&meta_info);
+        mutex_lock!(ui_data).player_ui_data.meta_info = Arc::clone(&meta_info);
 
         starting_info_text!("Initializing audio sink...");
         let playback_handle = start_global_playback_thread(
@@ -282,18 +287,13 @@ impl<B: Backend> Tui<B> {
         sleep(Duration::from_secs_f64(0.1));
 
         mutex_lock!(ui_data).ui_state = AppUiState::Player;
-        let coerced_song_list = meta_info
-            .list
-            .into_iter()
-            .take(tracks.len() - 1)
-            .collect::<Vec<_>>();
-        mutex_lock!(ui_data).player_ui_data.song_list = coerced_song_list;
 
         // play the first track initially
-        if let Some(first_track) = tracks.get(1) {
+        if let Some(first_song) = meta_info.list.first() {
+            let first_song_offset = tracks[first_song.session_no - 1].start_addr * SECTOR_SIZE;
             mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_commands([
                 PlayerCommand::Start,
-                PlayerCommand::Goto(first_track.start_addr * SECTOR_SIZE, true)
+                PlayerCommand::Goto(first_song_offset, true)
             ]);
         }
 
@@ -339,7 +339,7 @@ impl<B: Backend> Tui<B> {
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 let mut ui_data_guard = mutex_lock!(self.ui_data);
-                let track_length = ui_data_guard.player_ui_data.song_list.len();
+                let song_number = ui_data_guard.meta_info.list.len();
 
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                     // Ctrl-C pressed
@@ -352,61 +352,67 @@ impl<B: Backend> Tui<B> {
                     self.should_quit = true;
                 }
 
-                let wrapping_next = |track_no: usize| {
-                    if track_no == track_length {
-                        1
+                let wrapping_next = |song_idx: usize| {
+                    if song_idx == song_number - 1 {
+                        0
                     } else {
-                        track_no + 1
+                        song_idx + 1
                     }
                 };
-                let wrapping_prev = |track_no: usize| {
-                    if track_no == 1 {
-                        track_length
+                let wrapping_prev = |song_idx: usize| {
+                    if song_idx == 0 {
+                        song_number - 1
                     } else {
-                        track_no - 1
+                        song_idx - 1
                     }
                 };
-                macro track_offset($track_no:expr) {
-                    ui_data_guard.tracks[$track_no - 1].start_addr * SECTOR_SIZE
+                macro track_offset($track:expr) {
+                    $track.start_addr * SECTOR_SIZE
                 }
                 macro player_send($cmd:expr) {
                     mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send($cmd);
                 }
-                macro player_goto_track_no($no:expr) {
-                    player_send!(PlayerCommand::Goto(track_offset!($no), true))
+                macro player_goto_track($track:expr) {
+                    player_send!(PlayerCommand::Goto(track_offset!($track), true))
+                }
+
+                macro index_inc($tt:tt) {{
+                    let idx = &mut ui_data_guard.player_ui_data.$tt;
+                    *idx = wrapping_next(*idx);
+                }}
+                macro index_dec($tt:tt) {{
+                    let idx = &mut ui_data_guard.player_ui_data.$tt;
+                    *idx = wrapping_prev(*idx);
+                }}
+                macro player_goto_playing_one() {
+                    let playing_song_idx = ui_data_guard.player_ui_data.playing_song_idx;
+                    let song_track = ui_data_guard.disc_tracks[ui_data_guard.meta_info.list[playing_song_idx].session_no - 1];
+                    player_goto_track!(song_track);
                 }
 
                 if ui_data_guard.ui_state == AppUiState::Player {
                     match key.code {
                         KeyCode::Char('n') => {
                             // next
-                            let playing_track = &mut ui_data_guard.player_ui_data.playing_track;
-                            *playing_track = wrapping_next(*playing_track);
-                            let playing_track_no = *playing_track;
-                            player_goto_track_no!(playing_track_no);
+                            index_inc!(playing_song_idx);
+                            player_goto_playing_one!();
                         }
                         KeyCode::Char('p') => {
                             // previous
-                            let playing_track = &mut ui_data_guard.player_ui_data.playing_track;
-                            *playing_track = wrapping_prev(*playing_track);
-                            let playing_track_no = *playing_track;
-                            player_goto_track_no!(playing_track_no);
+                            index_dec!(playing_song_idx);
+                            player_goto_playing_one!();
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
                             // move down
-                            let track_no = &mut ui_data_guard.player_ui_data.selected_track;
-                            *track_no = wrapping_next(*track_no);
+                            index_inc!(selected_song_idx);
                         }
                         KeyCode::Char('k') | KeyCode::Up => {
                             // move up
-                            let track_no = &mut ui_data_guard.player_ui_data.selected_track;
-                            *track_no = wrapping_prev(*track_no);
+                            index_dec!(selected_song_idx);
                         }
                         KeyCode::Enter => {
-                            let selected_track_no = ui_data_guard.player_ui_data.selected_track;
-                            let offset = track_offset!(selected_track_no);
-                            ui_data_guard.player_ui_data.playing_track = selected_track_no;
-                            player_goto_track_no!(selected_track_no);
+                            ui_data_guard.player_ui_data.playing_song_idx = ui_data_guard.player_ui_data.selected_song_idx;
+                            player_goto_playing_one!();
                         }
                         KeyCode::Char(' ') => {
                             let PlayerResult::IsPaused(paused) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetIsPaused) else {
