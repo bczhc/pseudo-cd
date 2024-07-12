@@ -11,7 +11,7 @@ use cpal::{Sample, SampleFormat, SampleRate, Stream};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use once_cell::sync::Lazy;
 
-use crate::{mutex_lock, Track};
+use crate::{mutex_lock, SECTOR_SIZE, Track};
 
 /// We place [`Stream`] here just to prevent it from dropping
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));
@@ -61,10 +61,10 @@ pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
 }
 
 pub enum PlayerCommand {
-    /// Go to a position with [offset] in bytes
+    /// Go to a track
     ///
     /// The second parameter indicates autoplay
-    Goto(u64, bool),
+    Goto(Track, bool),
     /// Seek to a position with duration in seconds
     Seek(f64),
     /// Open the file and start playing
@@ -80,6 +80,11 @@ pub enum PlayerCommand {
     GetPosition,
     /// Get if in paused state
     GetIsPaused,
+}
+
+pub enum PlayerCallbackEvent {
+    Finished,
+    Paused(bool),
 }
 
 pub enum PlayerResult {
@@ -130,9 +135,13 @@ pub fn set_global_playback_handle(playback_handle: PlaybackHandle) {
     mutex_lock!(PLAYBACK_HANDLE).replace(playback_handle);
 }
 
-pub fn start_global_playback_thread(
+pub fn start_global_playback_thread<D, F>(
     drive: PathBuf,
-) -> anyhow::Result<PlaybackHandle> {
+    callback_data: D,
+    event_callback: Option<F>
+) -> anyhow::Result<PlaybackHandle> where
+    D: Send + 'static,
+    F: Fn(PlayerCallbackEvent, &D) + Send + 'static {
     let (cmd_tx, cmd_rx) = sync_channel::<PlayerCommand>(1);
     let (result_tx, result_rx) = sync_channel::<PlayerResult>(1);
     let result_rx = Arc::new(Mutex::new(result_rx));
@@ -142,6 +151,8 @@ pub fn start_global_playback_thread(
     spawn(move || {
         let mut paused = true;
         let mut reader: Option<BufReader<File>> = None;
+        let event_callback = event_callback;
+        let callback_data = callback_data;
         // TODO: avoid the endless loop
         loop {
             // TODO: error handling (unwrap) inside-thread
@@ -149,9 +160,9 @@ pub fn start_global_playback_thread(
                 Ok(PlayerCommand::Start) => {
                     reader = Some(BufReader::new(File::open(&drive).unwrap()));
                 }
-                Ok(PlayerCommand::Goto(offset, play)) => {
+                Ok(PlayerCommand::Goto(track, play)) => {
                     if let Some(ref mut r) = reader {
-                        r.seek(SeekFrom::Start(offset)).unwrap();
+                        r.seek(SeekFrom::Start(track.start_addr * SECTOR_SIZE)).unwrap();
                         if play {
                             paused = false;
                         }
@@ -159,12 +170,15 @@ pub fn start_global_playback_thread(
                 }
                 Ok(PlayerCommand::Pause) => {
                     paused = true;
+                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Paused(paused), &callback_data) }
                 }
                 Ok(PlayerCommand::Play) => {
                     paused = false;
+                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Paused(paused), &callback_data) }
                 }
                 Ok(PlayerCommand::SetPaused(p)) => {
                     paused = p;
+                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Paused(paused), &callback_data) }
                 }
                 Ok(PlayerCommand::GetIsPaused) => {
                     result_tx.send(PlayerResult::IsPaused(paused)).unwrap();

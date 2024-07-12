@@ -19,7 +19,7 @@ use ratatui::{Frame, Terminal};
 use yeet_ops::yeet;
 
 use crate::cli::ARGS;
-use crate::playback::{start_global_playback_thread, PlayerCommand, PlayerResult, AUDIO_STREAM, set_global_playback_handle, PLAYBACK_HANDLE};
+use crate::playback::{start_global_playback_thread, PlayerCommand, PlayerResult, AUDIO_STREAM, set_global_playback_handle, PLAYBACK_HANDLE, PlayerCallbackEvent};
 use crate::{cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, Track, SECTOR_SIZE, SongInfo, MetaInfo};
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
@@ -66,6 +66,15 @@ impl StartingUiData {
 enum PlayerState {
     Playing,
     Paused,
+}
+
+impl PlayerState {
+    fn from_paused(paused: bool) -> Self {
+        match paused {
+            true => Self::Paused,
+            false => Self::Playing
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -278,8 +287,18 @@ impl<B: Backend> Tui<B> {
         mutex_lock!(ui_data).player_ui_data.meta_info = Arc::clone(&meta_info);
 
         starting_info_text!("Initializing audio sink...");
+        let ui_data_for_player_callback = Arc::clone(ui_data);
         let playback_handle = start_global_playback_thread(
             mutex_lock!(ARGS).drive.clone(),
+            ui_data_for_player_callback,
+            Some(|event, ui_data: &Arc<Mutex<UiData>>| {
+                match event {
+                    PlayerCallbackEvent::Finished => {}
+                    PlayerCallbackEvent::Paused(paused) => {
+                        mutex_lock!(ui_data).player_ui_data.player_state = PlayerState::from_paused(paused);
+                    }
+                }
+            })
         )?;
         set_global_playback_handle(playback_handle);
 
@@ -290,10 +309,9 @@ impl<B: Backend> Tui<B> {
 
         // play the first track initially
         if let Some(first_song) = meta_info.list.first() {
-            let first_song_offset = tracks[first_song.session_no - 1].start_addr * SECTOR_SIZE;
             mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_commands([
                 PlayerCommand::Start,
-                PlayerCommand::Goto(first_song_offset, true)
+                PlayerCommand::Goto(tracks[first_song.session_no - 1], true)
             ]);
         }
 
@@ -372,10 +390,6 @@ impl<B: Backend> Tui<B> {
                 macro player_send($cmd:expr) {
                     mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send($cmd);
                 }
-                macro player_goto_track($track:expr) {
-                    player_send!(PlayerCommand::Goto(track_offset!($track), true))
-                }
-
                 macro index_inc($tt:tt) {{
                     let idx = &mut ui_data_guard.player_ui_data.$tt;
                     *idx = wrapping_next(*idx);
@@ -387,7 +401,7 @@ impl<B: Backend> Tui<B> {
                 macro player_goto_playing_one() {
                     let playing_song_idx = ui_data_guard.player_ui_data.playing_song_idx;
                     let song_track = ui_data_guard.disc_tracks[ui_data_guard.meta_info.list[playing_song_idx].session_no - 1];
-                    player_goto_track!(song_track);
+                    player_send!(PlayerCommand::Goto(song_track, true))
                 }
 
                 if ui_data_guard.ui_state == AppUiState::Player {
