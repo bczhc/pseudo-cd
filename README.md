@@ -124,3 +124,18 @@ Sess 2.
 ## Screenshot
 
 <img width="70%" alt="image" src="https://github.com/user-attachments/assets/a6317df1-65ae-4039-b865-7ed2d6bae724">
+
+## TUI Key Bindings
+
+```
+Space: Play/Pause
+n: Next
+p: Previous
+j, ArrowDown: Selection move up
+k, ArrowUp: Selection move down
+h, ArrowLeft: Seek backwards 5 seconds
+l, ArrowRight: Seek forward 5 seconds
+Enter: Play the selection
+,: Volume down
+.: Volume up
+```
