@@ -6,7 +6,6 @@ use std::time::Duration;
 use std::io;
 
 use anyhow::anyhow;
-use log::debug;
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
@@ -149,7 +148,7 @@ impl PlayerUiData {
                 .title_alignment(Alignment::Center),
             layout[1],
         );
-        
+
         frame.render_widget(Block::new()
             .title(format!("Volume: {}", (self.volume * 100.0) as u8))
             .title_alignment(Alignment::Right),
@@ -501,11 +500,8 @@ impl<B: Backend> Tui<B> {
                     match key.code {
                         KeyCode::Char('n') => {
                             // next
-                            debug!("1");
                             index_inc!(playing_song_idx);
-                            debug!("2");
                             player_goto_playing_one!();
-                            debug!("3");
                         }
                         KeyCode::Char('p') => {
                             // previous
