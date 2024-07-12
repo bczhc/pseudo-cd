@@ -133,7 +133,23 @@ impl PlaybackHandle {
     }
 
     pub fn player_result(&self) -> PlayerResult {
-        mutex_lock!(self.result_rx).recv().unwrap()
+        let rx = mutex_lock!(self.result_rx);
+        let mut last = rx.recv().unwrap();
+        // if multiple pending values are present, take the last one
+        loop {
+            match rx.try_recv() {
+                Ok(value) => {
+                    last = value;
+                }
+                Err(TryRecvError::Empty) => {
+                    break;
+                }
+                Err(e) => {
+                    panic!("{}", e);
+                }
+            }
+        }
+        last
     }
 
     pub fn send_recv(&self, cmd: PlayerCommand) -> PlayerResult {
@@ -154,7 +170,7 @@ pub fn start_global_playback_thread<D, F>(
     D: Send + 'static,
     F: Fn(PlayerCallbackEvent, &D) + Send + 'static {
     let (cmd_tx, cmd_rx) = sync_channel::<PlayerCommand>(1);
-    let (result_tx, result_rx) = sync_channel::<PlayerResult>(1);
+    let (result_tx, result_rx) = channel::<PlayerResult>();
     let result_rx = Arc::new(Mutex::new(result_rx));
     
     let (stream, sample_tx) = create_audio_stream()?;
