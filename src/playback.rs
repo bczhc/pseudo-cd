@@ -238,15 +238,19 @@ pub fn start_global_playback_thread<D, F>(
                 }
             }
             if !paused && let Some(ref mut r) = reader {
-                for _ in 0..1024 {
-                    let sample = r.read_i16::<LE>().unwrap();
-                    // TODO: this panics on `clean_up_and_exit`
-                    sample_tx.send(sample).unwrap();
+                let pos = r.stream_position().unwrap();
+                
+                if pos >= end_pos {
+                    // reach the end of the playing song
+                    event_callback!(PlayerCallbackEvent::Finished);
+                    continue;
+                }
+                let sample = r.read_i16::<LE>().unwrap();
+                // TODO: this panics on `clean_up_and_exit`
+                sample_tx.send(sample).unwrap();
 
-                    let pos = r.stream_position().unwrap();
-                    if (pos - start_pos) % (BYTES_ONE_SEC) == 0 {
-                        event_callback!(PlayerCallbackEvent::Progress(((pos - start_pos) / BYTES_ONE_SEC) as u32,song_seconds));
-                    }
+                if (pos - start_pos) % (BYTES_ONE_SEC) == 0 {
+                    event_callback!(PlayerCallbackEvent::Progress(((pos - start_pos) / BYTES_ONE_SEC) as u32, song_seconds));
                 }
             }
         }

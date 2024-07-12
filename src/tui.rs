@@ -91,6 +91,19 @@ impl PlayerUiData {
     fn song_name_by_song_idx(&self, idx: usize) -> &str {
         &self.meta_info.list[idx].name
     }
+    
+    fn next_song_idx(&self) -> usize {
+        let idx = self.playing_song_idx;
+        if idx == self.meta_info.list.len() - 1 {
+            0
+        } else {
+            idx + 1
+        }
+    }
+    
+    fn next_song(&self) -> &SongInfo {
+        &self.meta_info.list[self.next_song_idx()]
+    }
 
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {
         let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(1), Constraint::Length(1)]).split(rect);
@@ -334,7 +347,12 @@ impl<B: Backend> Tui<B> {
             Some(|event, ui_data: &Arc<Mutex<UiData>>| {
                 match event {
                     PlayerCallbackEvent::Finished => {
-                        // TODO
+                        let mut guard = mutex_lock!(ui_data);
+                        let next_song_idx = guard.player_ui_data.next_song_idx();
+                        let next_song = &guard.player_ui_data.meta_info.list[next_song_idx];
+                        let next_track = guard.disc_tracks[next_song.session_no - 1];
+                        guard.player_ui_data.playing_song_idx = next_song_idx;
+                        mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send(PlayerCommand::Goto(next_track, true));
                     }
                     PlayerCallbackEvent::Paused(paused) => {
                         mutex_lock!(ui_data).player_ui_data.player_state = PlayerState::from_paused(paused);
