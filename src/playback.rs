@@ -90,6 +90,11 @@ pub enum PlayerCommand {
     GetPosition,
     /// Get if in paused state
     GetIsPaused,
+    /// This issues a "stop" command and the player thread will emit
+    /// a [`PlayerCallbackEvent::Stopped`] event.
+    /// 
+    /// This is useful to wait the player thread to be terminated.
+    StopAndWait,
 }
 
 pub enum PlayerCallbackEvent {
@@ -104,6 +109,7 @@ pub enum PlayerResult {
     IsPaused(bool),
     /// Current position in seconds
     Position(f64),
+    Stopped,
 }
 
 pub struct StreamSendWrapper(Stream);
@@ -231,13 +237,17 @@ pub fn start_global_playback_thread<D, F>(
                         event_callback!(PlayerCallbackEvent::Progress(((seek_pos - start_pos) / BYTES_ONE_SEC) as u32, song_seconds));
                     }
                 }
-                Ok(_) => {
-                    unimplemented!();
-                }
                 Err(e) => {
                     if e != TryRecvError::Empty {
                         panic!("{}", e);
                     }
+                }
+                Ok(PlayerCommand::ChangeVolume(level)) => {
+                    todo!()
+                }
+                Ok(PlayerCommand::StopAndWait) => {
+                    result_tx.send(PlayerResult::Stopped).unwrap();
+                    break;
                 }
             }
             if !paused && let Some(ref mut r) = reader {
@@ -249,7 +259,6 @@ pub fn start_global_playback_thread<D, F>(
                     continue;
                 }
                 let sample = r.read_i16::<LE>().unwrap();
-                // TODO: this panics on `clean_up_and_exit`
                 sample_tx.send(sample).unwrap();
 
                 if (pos - start_pos) % (BYTES_ONE_SEC) == 0 {
@@ -257,9 +266,6 @@ pub fn start_global_playback_thread<D, F>(
                 }
             }
         }
-        // block the thread
-        let mutex = Mutex::new(());
-        let _a = Condvar::new().wait(mutex.lock().unwrap()).unwrap();
     });
     Ok(PlaybackHandle {
         command_tx: cmd_tx,

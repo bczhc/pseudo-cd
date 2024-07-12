@@ -286,6 +286,10 @@ pub fn clean_up_tui() -> io::Result<()> {
 }
 
 pub fn clean_up_and_exit() {
+    let PlayerResult::Stopped = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::StopAndWait) else {
+        panic!("Unexpected player result");
+    };
+    
     let _ = clean_up_tui();
     drop(mutex_lock!(AUDIO_STREAM).take());
     exit(0);
