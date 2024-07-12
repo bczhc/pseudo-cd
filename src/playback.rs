@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::mpsc::{channel, Receiver, sync_channel, SyncSender};
+use std::sync::mpsc::{channel, Receiver, sync_channel, SyncSender, TryRecvError};
 use std::thread::spawn;
 
 use anyhow::anyhow;
@@ -160,7 +160,8 @@ pub fn start_global_playback_thread<D, F>(
         let mut song_seconds = 0_u32;
         let event_callback = event_callback;
         let callback_data = callback_data;
-        const BYTES_ONE_SEC: u64 = AUDIO_SAMPLE_RATE as u64 * AUDIO_BIT_DEPTH as u64 * AUDIO_CHANNELS as u64 / 8;
+        const SAMPLES_ONE_SEC: u64 = AUDIO_SAMPLE_RATE as u64 * AUDIO_CHANNELS as u64;
+        const BYTES_ONE_SEC: u64 = SAMPLES_ONE_SEC * AUDIO_BIT_DEPTH as u64 / 8;
         macro event_callback($($arg:tt)*) {
             if let Some(x) = event_callback.as_ref() { x($($arg)*, &callback_data) }
         }
@@ -199,10 +200,37 @@ pub fn start_global_playback_thread<D, F>(
                 Ok(PlayerCommand::GetIsPaused) => {
                     result_tx.send(PlayerResult::IsPaused(paused)).unwrap();
                 }
+                Ok(PlayerCommand::GetPosition) => {
+                    let position = match &mut reader {
+                        None => {
+                            0.0
+                        }
+                        Some(r) => {
+                            (r.stream_position().unwrap() - start_pos) as f64 / BYTES_ONE_SEC as f64
+                        }
+                    };
+                    result_tx.send(PlayerResult::Position(position)).unwrap();
+                }
+                Ok(PlayerCommand::Seek(p)) => {
+                    if let Some(reader) = &mut reader {
+                        let mut one_sec_samples = (SAMPLES_ONE_SEC as f64 * p) as u64;
+                        // For two-channel audio streams, only skip even samples
+                        if one_sec_samples % 2 == 1 {
+                            one_sec_samples -= 1;
+                        }
+                        let seek_pos = start_pos + one_sec_samples * AUDIO_BIT_DEPTH as u64 / 8;
+                        reader.seek(SeekFrom::Start(seek_pos)).unwrap();
+                        event_callback!(PlayerCallbackEvent::Progress(((seek_pos - start_pos) / BYTES_ONE_SEC) as u32, song_seconds));
+                    }
+                }
                 Ok(_) => {
                     unimplemented!();
                 }
-                Err(_) => {}
+                Err(e) => {
+                    if e != TryRecvError::Empty {
+                        panic!("{}", e);
+                    }
+                }
             }
             if !paused && let Some(ref mut r) = reader {
                 for _ in 0..1024 {

@@ -136,7 +136,7 @@ impl PlayerUiData {
         );
 
         fn coerce(ratio: f64) -> f64 {
-            match ratio { 
+            match ratio {
                 _ if !ratio.is_finite() => {
                     0.0
                 }
@@ -399,6 +399,8 @@ impl<B: Backend> Tui<B> {
     /// p: Previous
     /// j, ArrowDown: Selection move up
     /// k, ArrowUp: Selection move down
+    /// h, ArrowLeft: Seek backwards 5 seconds
+    /// l, ArrowRight: Seek forward 5 seconds
     /// Enter: Play the selection
     pub fn handle_events(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(50))? {
@@ -467,6 +469,19 @@ impl<B: Backend> Tui<B> {
                         KeyCode::Char('k') | KeyCode::Up => {
                             // move up
                             index_dec!(selected_song_idx);
+                        }
+                        KeyCode::Char('h') | KeyCode::Left => {
+                            //seek backwards
+                            let PlayerResult::Position(p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
+                                panic!("Unexpected player result")
+                            };
+                            player_send!(PlayerCommand::Seek(p - 5.0));
+                        }
+                        KeyCode::Char('l') | KeyCode::Right => {
+                            let PlayerResult::Position(p) = mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send_recv(PlayerCommand::GetPosition) else {
+                                panic!("Unexpected player result")
+                            };
+                            player_send!(PlayerCommand::Seek(p + 5.0));
                         }
                         KeyCode::Enter => {
                             ui_data_guard.player_ui_data.playing_song_idx = ui_data_guard.player_ui_data.selected_song_idx;
