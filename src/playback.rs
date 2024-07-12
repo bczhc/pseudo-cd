@@ -180,7 +180,6 @@ pub fn start_global_playback_thread<D, F>(
         macro event_callback($($arg:tt)*) {
             if let Some(x) = event_callback.as_ref() { x($($arg)*, &callback_data) }
         }
-        // TODO: avoid the endless loop
         loop {
             // TODO: error handling (unwrap) inside-thread
             match cmd_rx.try_recv() {
