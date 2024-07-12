@@ -6,6 +6,7 @@ use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use anyhow::anyhow;
+use log::debug;
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
@@ -452,6 +453,8 @@ impl<B: Backend> Tui<B> {
     /// p: Previous
     /// j, ArrowDown: Selection move up
     /// k, ArrowUp: Selection move down
+    /// g, Home: Move selection to the first
+    /// G, End: Move selection to the last
     /// h, ArrowLeft: Seek backwards 5 seconds
     /// l, ArrowRight: Seek forward 5 seconds
     /// Enter: Play the selection
@@ -499,6 +502,12 @@ impl<B: Backend> Tui<B> {
                     let idx = &mut guard.player_ui_data.$tt;
                     *idx = wrapping_next(*idx);
                 }}
+                macro selection_move_first() {
+                    ui_data_guard!().player_ui_data.selected_song_idx = 0;
+                }
+                macro selection_move_last() {
+                ui_data_guard!().player_ui_data.selected_song_idx = song_number - 1;
+                }
                 macro index_dec($tt:tt) {{
                     let mut guard = ui_data_guard!();
                     let idx = &mut guard.player_ui_data.$tt;
@@ -614,8 +623,15 @@ impl<B: Backend> Tui<B> {
                             };
                             player_send!(PlayerCommand::ChangeVolume(volume));
                         }
+                        KeyCode::Char('g') | KeyCode::Home => {
+                            selection_move_first!();
+                        }
+                        KeyCode::Char('G') | KeyCode::End => {
+                            selection_move_last!();
+                        }
                         _ => {}
                     }
+                    debug!("{:?}", key);
                 }
             }
         }
