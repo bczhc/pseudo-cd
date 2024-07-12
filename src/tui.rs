@@ -506,7 +506,7 @@ impl<B: Backend> Tui<B> {
                     ui_data_guard!().player_ui_data.selected_song_idx = 0;
                 }
                 macro selection_move_last() {
-                ui_data_guard!().player_ui_data.selected_song_idx = song_number - 1;
+                    ui_data_guard!().player_ui_data.selected_song_idx = song_number - 1;
                 }
                 macro index_dec($tt:tt) {{
                     let mut guard = ui_data_guard!();
