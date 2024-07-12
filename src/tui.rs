@@ -91,7 +91,7 @@ impl PlayerUiData {
     fn song_name_by_song_idx(&self, idx: usize) -> &str {
         &self.meta_info.list[idx].name
     }
-    
+
     fn next_song_idx(&self) -> usize {
         let idx = self.playing_song_idx;
         if idx == self.meta_info.list.len() - 1 {
@@ -100,7 +100,7 @@ impl PlayerUiData {
             idx + 1
         }
     }
-    
+
     fn next_song(&self) -> &SongInfo {
         &self.meta_info.list[self.next_song_idx()]
     }

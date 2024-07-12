@@ -14,6 +14,9 @@ pub struct Args {
     /// By default, the first track is picked.
     #[arg(default_value = "1", short, long, alias = "mit")]
     pub meta_info_track: usize,
+    /// Program log will output to this if present
+    #[arg(short, long)]
+    pub log_file: Option<PathBuf>,
 }
 
 pub static ARGS: Lazy<Mutex<Args>> = Lazy::new(|| {

@@ -6,9 +6,10 @@ use std::panic;
 use std::panic::take_hook;
 use std::process::exit;
 use std::thread::spawn;
+use log::{debug, info};
 
 use pseudo_cd_player::cli::{Args, ARGS};
-use pseudo_cd_player::mutex_lock;
+use pseudo_cd_player::{mutex_lock, set_up_logging};
 use ratatui::prelude::*;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -41,6 +42,12 @@ fn set_up_panic_hook() {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    if let Some(ref f) = args.log_file {
+        set_up_logging(f)?;
+    }
+    
+    info!("Args: {:?}", args);
     *mutex_lock!(ARGS) = args;
 
     set_up_panic_hook();

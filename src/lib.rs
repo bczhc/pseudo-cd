@@ -10,6 +10,7 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 
 use once_cell::sync::Lazy;
@@ -194,4 +195,20 @@ pub fn check_cdrskin_version() -> io::Result<Option<String>> {
             .as_str()
     };
     Ok(version.map(Into::into))
+}
+
+pub fn set_up_logging<P: AsRef<Path>>(file_path: P) -> anyhow::Result<()> {
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{} {} {}] {}",
+                humantime::format_rfc3339(std::time::SystemTime::now()),
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .chain(fern::log_file(file_path)?)
+        .apply()?;
+    Ok(())
 }
