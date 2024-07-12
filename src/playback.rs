@@ -3,14 +3,13 @@ use byteorder::{ReadBytesExt, LE};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SampleRate, Stream};
 use once_cell::sync::Lazy;
-use std::cell::RefCell;
+
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{sync_channel, SyncSender, TryRecvError};
+use std::io::{BufReader, Seek, SeekFrom};
+use std::path::PathBuf;
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::{sleep, spawn};
-use std::time::Duration;
+use std::thread::spawn;
 
 /// We place [`Stream`] here just to prevent it from dropping
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));
@@ -48,7 +47,7 @@ pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
 
 pub enum PlayerCommand {
     /// Go to a position with [offset] in bytes
-    /// 
+    ///
     /// The second parameter indicates autoplay
     Goto(u64, bool),
     /// Seek to a position with duration in seconds
@@ -87,7 +86,10 @@ impl From<Stream> for StreamSendWrapper {
 unsafe impl Send for StreamSendWrapper {}
 
 // TODO: create a helper wrapper
-pub fn start_global_playback_thread(drive: PathBuf, result_arc: Arc<Mutex<PlayerResult>>) -> anyhow::Result<SyncSender<PlayerCommand>> {
+pub fn start_global_playback_thread(
+    drive: PathBuf,
+    result_arc: Arc<Mutex<PlayerResult>>,
+) -> anyhow::Result<SyncSender<PlayerCommand>> {
     let (tx, rx) = sync_channel::<PlayerCommand>(1);
     let (stream, sample_tx) = create_audio_stream()?;
     mutex_lock!(AUDIO_STREAM).replace(StreamSendWrapper(stream));
@@ -124,8 +126,7 @@ pub fn start_global_playback_thread(drive: PathBuf, result_arc: Arc<Mutex<Player
                 Ok(_) => {
                     unimplemented!();
                 }
-                Err(_) => {
-                }
+                Err(_) => {}
             }
             if !paused && let Some(ref mut r) = reader {
                 for _ in 0..1024 {

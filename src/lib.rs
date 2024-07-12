@@ -10,7 +10,7 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
-use std::process::{Command, ExitCode, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 
 use once_cell::sync::Lazy;
 use regex::Regex;

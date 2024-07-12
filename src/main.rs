@@ -1,7 +1,7 @@
 #![feature(yeet_expr)]
 
 use clap::Parser;
-use std::io::{stdin, stdout};
+use std::io::stdout;
 use std::thread::spawn;
 
 use pseudo_cd_player::cli::{Args, ARGS};
