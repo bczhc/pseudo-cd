@@ -98,11 +98,12 @@ impl PlayerUiData {
         let list_items = self.meta_info.list.iter().enumerate().map(|(i, x)| {
             let item_text = format!("{}: {}", i + 1, x.name);
             let mut item = ListItem::new(item_text);
-            // TODO: not consider terminal themes like white-background-black-text?
+            // TODO: not consider terminal themes other than black-background-white-text?
             if self.selected_song_idx == i {
                 let style = Style {
-                    bg: Some(Color::Gray),
+                    bg: Some(Color::LightBlue),
                     fg: Some(Color::White),
+                    add_modifier: Modifier::BOLD,
                     ..Default::default()
                 };
                 item = item.style(style);
@@ -111,6 +112,7 @@ impl PlayerUiData {
                 let style = Style {
                     bg: Some(Color::White),
                     fg: Some(Color::Black),
+                    add_modifier: Modifier::BOLD,
                     ..Default::default()
                 };
                 item = item.style(style);
