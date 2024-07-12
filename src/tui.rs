@@ -13,9 +13,9 @@ use ratatui::crossterm::terminal::{
 };
 use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Constraint, Rect};
-use ratatui::prelude::{Color, Layout, Style};
-use ratatui::widgets::{Block, Borders, List, ListItem, Padding, Paragraph};
-use ratatui::{Frame, Terminal};
+use ratatui::prelude::{Color, Layout, Modifier, Style};
+use ratatui::widgets::{Block, Borders, LineGauge, List, ListItem, Padding, Paragraph};
+use ratatui::{Frame, symbols, Terminal};
 use yeet_ops::yeet;
 
 use crate::cli::ARGS;
@@ -83,15 +83,21 @@ struct PlayerUiData {
     selected_song_idx: usize,
     playing_song_idx: usize,
     meta_info: Arc<MetaInfo>,
+    current_position: u32,
+    total_duration: u32,
 }
 
 impl PlayerUiData {
-    fn song_name(&self, track_no: usize) -> &str {
+    fn song_name_by_track_no(&self, track_no: usize) -> &str {
         &self.meta_info.list[track_no].name
     }
 
+    fn song_name_by_song_idx(&self, idx: usize) -> &str {
+        &self.meta_info.list[self.meta_info.list[idx].session_no - 1].name
+    }
+
     fn draw_to(&self, frame: &mut Frame, rect: Rect) {
-        let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(rect);
+        let layout = Layout::vertical([Constraint::Min(0), Constraint::Length(1), Constraint::Length(1)]).split(rect);
 
         let list_items = self.meta_info.list.iter().enumerate().map(|(i, x)| {
             let item_text = format!("{}: {}", i + 1, x.name);
@@ -122,16 +128,42 @@ impl PlayerUiData {
             PlayerState::Playing => "Playing: ",
             PlayerState::Paused => "Paused: ",
         };
-        let bottom_title = format!("{state_str}{}", self.meta_info.list[self.playing_song_idx].name);
+        let bottom_title = format!("{state_str}{}", self.song_name_by_song_idx(self.playing_song_idx));
 
         frame.render_widget(
             Block::new()
-                .borders(Borders::BOTTOM)
                 .title(bottom_title.as_str())
                 .title_alignment(Alignment::Center),
             layout[1],
-        )
+        );
+        
+        fn non_nan(ratio: f64) -> f64 {
+            if ratio.is_nan() {
+                return 0.0;
+            }
+            ratio
+        }
+
+        frame.render_widget(LineGauge::default()
+                                .filled_style(Style::default().fg(Color::Blue))
+                                .unfilled_style(Style::default().fg(Color::Gray))
+                                .label(duration_string((self.current_position, self.total_duration)))
+                                .ratio(non_nan(self.current_position as f64 / self.total_duration as f64)), layout[2]);
     }
+}
+
+fn duration_string((position, total): (u32, u32)) -> String {
+    let pad_zero = |num: u32| {
+        if num < 10 {
+            format!("0{num}")
+        } else {
+            format!("{num}")
+        }
+    };
+    let make_string = |num: u32| {
+        format!("{}:{}", pad_zero(num / 60), pad_zero(num % 60))
+    };
+    format!("{}/{}", make_string(position), make_string(total))
 }
 
 #[derive(Clone, Debug)]
@@ -176,6 +208,8 @@ impl Default for UiData {
                 selected_song_idx: 0,
                 player_state: PlayerState::Playing,
                 meta_info: Default::default(),
+                current_position: 0,
+                total_duration: 0,
             },
             any_key_to_exit: false,
             disc_tracks: Default::default(),
@@ -293,9 +327,16 @@ impl<B: Backend> Tui<B> {
             ui_data_for_player_callback,
             Some(|event, ui_data: &Arc<Mutex<UiData>>| {
                 match event {
-                    PlayerCallbackEvent::Finished => {}
+                    PlayerCallbackEvent::Finished => {
+                        // TODO
+                    }
                     PlayerCallbackEvent::Paused(paused) => {
                         mutex_lock!(ui_data).player_ui_data.player_state = PlayerState::from_paused(paused);
+                    }
+                    PlayerCallbackEvent::Progress(current, total) => {
+                        let mut guard = mutex_lock!(ui_data);
+                        guard.player_ui_data.current_position = current;
+                        guard.player_ui_data.total_duration = total;
                     }
                 }
             })
@@ -384,9 +425,6 @@ impl<B: Backend> Tui<B> {
                         song_idx - 1
                     }
                 };
-                macro track_offset($track:expr) {
-                    $track.start_addr * SECTOR_SIZE
-                }
                 macro player_send($cmd:expr) {
                     mutex_lock!(PLAYBACK_HANDLE).as_ref().unwrap().send($cmd);
                 }

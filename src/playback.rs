@@ -17,6 +17,8 @@ use crate::{mutex_lock, SECTOR_SIZE, Track};
 pub static AUDIO_STREAM: Lazy<Mutex<Option<StreamSendWrapper>>> = Lazy::new(|| Mutex::new(None));
 pub static PLAYBACK_HANDLE: Lazy<Mutex<Option<PlaybackHandle>>> = Lazy::new(|| Mutex::new(None));
 pub const AUDIO_SAMPLE_RATE: u32 = 44100;
+pub const AUDIO_BIT_DEPTH: u32 = 16;
+pub const AUDIO_CHANNELS: u32 = 2;
 
 pub fn create_audio_stream() -> anyhow::Result<(Stream, SyncSender<i16>)> {
     let (tx, rx) = sync_channel(AUDIO_SAMPLE_RATE as usize);
@@ -85,6 +87,8 @@ pub enum PlayerCommand {
 pub enum PlayerCallbackEvent {
     Finished,
     Paused(bool),
+    /// (current, total), in seconds
+    Progress(u32, u32),
 }
 
 pub enum PlayerResult {
@@ -151,8 +155,12 @@ pub fn start_global_playback_thread<D, F>(
     spawn(move || {
         let mut paused = true;
         let mut reader: Option<BufReader<File>> = None;
+        let mut start_pos = 0_u64;
+        let mut end_pos = 0_u64;
+        let mut song_seconds = 0_u32;
         let event_callback = event_callback;
         let callback_data = callback_data;
+        const BYTES_ONE_SEC: u64 = AUDIO_SAMPLE_RATE as u64 * AUDIO_BIT_DEPTH as u64 * AUDIO_CHANNELS as u64 / 8;
         // TODO: avoid the endless loop
         loop {
             // TODO: error handling (unwrap) inside-thread
@@ -162,11 +170,15 @@ pub fn start_global_playback_thread<D, F>(
                 }
                 Ok(PlayerCommand::Goto(track, play)) => {
                     if let Some(ref mut r) = reader {
-                        r.seek(SeekFrom::Start(track.start_addr * SECTOR_SIZE)).unwrap();
+                        r.seek(SeekFrom::Start(track.start_offset())).unwrap();
                         if play {
                             paused = false;
                         }
                     }
+                    start_pos = track.start_offset();
+                    end_pos = track.end_offset();
+                    song_seconds = ((end_pos - start_pos) / BYTES_ONE_SEC) as u32;
+                    if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Progress(0, song_seconds), &callback_data) }
                 }
                 Ok(PlayerCommand::Pause) => {
                     paused = true;
@@ -191,8 +203,16 @@ pub fn start_global_playback_thread<D, F>(
             if !paused && let Some(ref mut r) = reader {
                 for _ in 0..1024 {
                     let sample = r.read_i16::<LE>().unwrap();
-                    // TODO: panics on `clean_up_and_exit`
-                    sample_tx.send(sample).unwrap()
+                    // TODO: this panics on `clean_up_and_exit`
+                    sample_tx.send(sample).unwrap();
+
+                    let pos = r.stream_position().unwrap();
+                    if (pos - start_pos) % (BYTES_ONE_SEC) == 0 {
+                        if let Some(x) = event_callback.as_ref() { x(PlayerCallbackEvent::Progress(
+                            ((pos - start_pos) / BYTES_ONE_SEC) as u32,
+                            song_seconds,
+                        ), &callback_data) }
+                    }
                 }
             }
         }

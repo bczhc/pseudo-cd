@@ -53,6 +53,18 @@ pub struct Track {
     pub size: u64,
 }
 
+impl Track {
+    /// Starting offset in bytes
+    pub fn start_offset(&self) -> u64 {
+        self.start_addr * SECTOR_SIZE
+    }
+    
+    /// Ending offset in bytes
+    pub fn end_offset(&self) -> u64 {
+        self.end_addr * SECTOR_SIZE
+    }
+}
+
 #[derive(Debug)]
 struct ProgramError {
     stdout: String,
