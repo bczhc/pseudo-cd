@@ -12,10 +12,10 @@ pub struct Args {
     /// Number (starts from one) of the track that stores meta info of this "Pseudo-CD" authoring
     ///
     /// By default, the first track is picked.
-    #[arg(value_enum, default_value = "1", short, long, alias = "mit")]
+    #[arg(default_value = "1", short, long, alias = "mit")]
     pub meta_info_track: usize,
     /// Program to fetch optical medium info
-    #[arg(long, default_value = "cdrskin")]
+    #[arg(value_enum, long, default_value = "cdrskin")]
     pub minfo_program: MinfoCli,
     /// Program log will output to this if present
     #[arg(short, long)]
