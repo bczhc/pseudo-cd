@@ -19,7 +19,7 @@ use ratatui::prelude::{Color, Layout, Modifier, Style};
 use ratatui::widgets::{Block, LineGauge, List, ListItem, Padding, Paragraph};
 use yeet_ops::yeet;
 
-use crate::{extract_meta_info, MetaInfo, minfo, mutex_lock, Track};
+use crate::{extract_meta_info, MetaInfo, minfo, mutex_lock, SongInfo, Track};
 use crate::cli::ARGS;
 use crate::minfo::minfo_cli;
 use crate::playback::{
@@ -354,19 +354,35 @@ impl<B: Backend> Tui<B> {
         let tracks = Arc::new(tracks);
         mutex_lock!(ui_data).disc_tracks = Arc::clone(&tracks);
 
-        starting_info_text!("Tracks fetched. Extracting meta info...");
+        let no_meta = mutex_lock!(ARGS).no_meta;
+        let meta_info = if !no_meta {
+            starting_info_text!("Tracks fetched. Extracting meta info...");
 
-        let meta_info_track = tracks
-            .get(
-                mutex_lock!(ARGS).meta_info_track - 1, /* track number starts from one */
-            )
-            .ok_or_else(|| {
-                anyhow!(
+            let meta_info_track = tracks
+                .get(
+                    mutex_lock!(ARGS).meta_info_track - 1, /* track number starts from one */
+                )
+                .ok_or_else(|| {
+                    anyhow!(
                     "Meta info track is out-of-index; Number of tracks: {}",
                     tracks.len()
                 )
-            })?;
-        let meta_info = Arc::new(extract_meta_info(*meta_info_track)?);
+                })?;
+            extract_meta_info(*meta_info_track)?
+        } else {
+            let song_list = tracks.iter().enumerate().map(|(i, _)| {
+                SongInfo {
+                    name: format!("{}", i + 1),
+                    session_no: i + 1,
+                }
+            }).collect::<Vec<_>>();
+            MetaInfo {
+                list: song_list,
+                ..Default::default()
+            }
+        };
+
+        let meta_info = Arc::new(meta_info);
         mutex_lock!(ui_data).meta_info = Arc::clone(&meta_info);
         mutex_lock!(ui_data).player_ui_data.meta_info = Arc::clone(&meta_info);
 

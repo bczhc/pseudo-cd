@@ -122,8 +122,8 @@ pub struct SongInfo {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct MetaInfo {
-    title: String,
-    creation_time: u64,
+    title: Option<String>,
+    creation_time: Option<u64>,
     list: Vec<SongInfo>,
 }
 

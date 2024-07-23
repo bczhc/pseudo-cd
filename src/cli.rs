@@ -14,6 +14,9 @@ pub struct Args {
     /// By default, the first track is picked.
     #[arg(default_value = "1", short, long, alias = "mit")]
     pub meta_info_track: usize,
+    /// On true, assume all tracks are PCM data.
+    #[arg(long, default_value = "false")]
+    pub no_meta: bool,
     /// Program to fetch optical medium info
     #[arg(value_enum, long, default_value = "cdrskin")]
     pub minfo_program: MinfoCli,
