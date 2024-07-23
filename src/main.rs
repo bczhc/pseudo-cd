@@ -11,12 +11,13 @@ use std::thread::spawn;
 use pseudo_cd_player::cli::{Args, ARGS};
 use pseudo_cd_player::{mutex_lock, set_up_logging};
 use ratatui::prelude::*;
-use signal_hook::consts::{SIGINT, SIGTERM};
-use signal_hook::iterator::Signals;
 
 use pseudo_cd_player::tui::{clean_up_and_exit, clean_up_tui, Tui};
 
+#[cfg(unix)]
 fn register_signal_hooks() {
+    use signal_hook::consts::{SIGINT, SIGTERM};
+    use signal_hook::iterator::Signals;
     let mut signals = Signals::new([SIGINT, SIGTERM]).unwrap();
     #[allow(clippy::never_loop)]
     for _signal in &mut signals {
@@ -51,6 +52,7 @@ fn main() -> anyhow::Result<()> {
     *mutex_lock!(ARGS) = args;
 
     set_up_panic_hook();
+    #[cfg(unix)]
     spawn(register_signal_hooks);
     run_tui()?;
     Ok(())
