@@ -99,27 +99,39 @@ Sess 2.
 
 ## CLI Options
 
-<pre><u style="text-decoration-style:solid"><b>Usage:</b></u> <b>pseudo-cd-player</b> [OPTIONS] [DRIVE]
+<pre>
+Usage: pseudo-cd-player [OPTIONS] [DRIVE]
 
-<u style="text-decoration-style:solid"><b>Arguments:</b></u>
-  [DRIVE]
-          Path of the disc drive (like /dev/sr0 on Linux) TODO: on platforms other than *nix?
-          
+Arguments:
+[DRIVE]
+Path of the disc drive (like /dev/sr0 on Linux) TODO: on platforms other than *nix?
+
           [default: /dev/sr0]
 
-<u style="text-decoration-style:solid"><b>Options:</b></u>
-  <b>-m</b>, <b>--meta-info-track</b> &lt;META_INFO_TRACK&gt;
-          Number (starts from one) of the track that stores meta info of this &quot;Pseudo-CD&quot; authoring
-          
+Options:
+-m, --meta-info-track <META_INFO_TRACK>
+Number (starts from one) of the track that stores meta info of this "Pseudo-CD" authoring
+
           By default, the first track is picked.
           
           [default: 1]
 
-  <b>-l</b>, <b>--log-file</b> &lt;LOG_FILE&gt;
-          Program log will output to this if present
+      --no-meta
+          On true, assume all tracks are PCM data
 
-  <b>-h</b>, <b>--help</b>
-          Print help (see a summary with &apos;-h&apos;)</pre>
+      --minfo-program <MINFO_PROGRAM>
+          Program to fetch optical medium info
+          
+          [default: cdrskin]
+          [possible values: cdrskin, cdrecord, wodim]
+
+-l, --log-file <LOG_FILE>
+Program log will output to this if present
+
+-h, --help
+Print help (see a summary with '-h')
+
+</pre>
 
 ## Screenshot
 
