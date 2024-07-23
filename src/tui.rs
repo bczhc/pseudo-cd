@@ -7,26 +7,24 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use log::debug;
+use ratatui::{Frame, Terminal};
 use ratatui::backend::Backend;
+use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::crossterm::{event, ExecutableCommand};
 use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::prelude::{Color, Layout, Modifier, Style};
 use ratatui::widgets::{Block, LineGauge, List, ListItem, Padding, Paragraph};
-use ratatui::{Frame, Terminal};
 use yeet_ops::yeet;
 
+use crate::{extract_meta_info, MetaInfo, minfo, mutex_lock, Track};
 use crate::cli::ARGS;
+use crate::minfo::minfo_cli;
 use crate::playback::{
-    duration_from_bytes, set_global_playback_handle, start_global_playback_thread,
-    PlayerCallbackEvent, PlayerCommand, PlayerResult, AUDIO_STREAM, PLAYBACK_HANDLE,
-};
-use crate::{
-    cdrskin_medium_track_info, check_cdrskin_version, extract_meta_info, mutex_lock, MetaInfo,
-    Track,
+    AUDIO_STREAM, duration_from_bytes, PLAYBACK_HANDLE,
+    PlayerCallbackEvent, PlayerCommand, PlayerResult, set_global_playback_handle, start_global_playback_thread,
 };
 
 const TUI_APP_TITLE: &str = "Pseudo-CD Player";
@@ -337,19 +335,22 @@ impl<B: Backend> Tui<B> {
         macro starting_info_text($($arg:tt)*) {
         mutex_lock!(ui_data).starting_ui_data.info_text = format!($($arg)*)
         }
+       
+        starting_info_text!("Checking {}...", minfo_cli!());
 
-        starting_info_text!("Checking cdrskin...");
-
-        let version = check_cdrskin_version();
+        let version = minfo::check_version_line();
         let version = match version {
-            Err(_) | Ok(None) => {
-                yeet!(anyhow!("Command `cdrskin` not found"))
+            Err(_) => {
+                yeet!(anyhow!("Command `{}` not found", minfo_cli!()))
             }
-            Ok(Some(version)) => version,
+            Ok(version) => version,
         };
 
-        starting_info_text!("cdrskin version: {version}; Fetching tracks info...");
-        let tracks = cdrskin_medium_track_info()?;
+        starting_info_text!(
+            "{} version: {version}; Fetching tracks info...",
+            minfo_cli!()
+        );
+        let tracks = minfo::minfo_track_info()?;
         let tracks = Arc::new(tracks);
         mutex_lock!(ui_data).disc_tracks = Arc::clone(&tracks);
 

@@ -1,7 +1,6 @@
 #![feature(try_blocks)]
 #![feature(decl_macro)]
 #![feature(yeet_expr)]
-#![feature(byte_slice_trim_ascii)]
 #![feature(let_chains)]
 
 extern crate core;
@@ -22,6 +21,7 @@ use crate::cli::ARGS;
 pub mod cli;
 pub mod playback;
 pub mod tui;
+pub mod minfo;
 
 /// The sector size optical discs use is 2048 bytes.
 const SECTOR_SIZE: u64 = 2048;
@@ -33,16 +33,6 @@ macro lazy_regex($name:tt ,$regex:expr) {
 pub macro mutex_lock($m:expr) {
     $m.lock().unwrap()
 }
-
-lazy_regex!(CDRSKIN_VERSION_REGEX, r"cdrskin version +: +(\d.*)");
-lazy_regex!(
-    CDRSKIN_TRACKS_HEADER_REGEX,
-    r"Track +Sess +Type +Start Addr +End Addr +Size"
-);
-lazy_regex!(
-    CDRSKIN_TRACK_CAPTURING_REGEX,
-    r"^ *(\d+) +(\d+) +Data +(\d+) +(\d+) +(\d+) *$"
-);
 
 /// [start_addr], [end_addr] and [size] are in sectors (see [SECTOR_SIZE])
 #[derive(Debug, Clone, Copy)]
@@ -123,39 +113,6 @@ fn execute_command_with_output(cmd: &[&str]) -> io::Result<String> {
     Ok(String::from_utf8(output.stdout).expect("Invalid UTF-8 met"))
 }
 
-fn cdrskin_medium_info_string() -> io::Result<String> {
-    execute_command_with_output(&[
-        "cdrskin",
-        &format!("dev={}", mutex_lock!(ARGS).drive.display()),
-        "-minfo",
-    ])
-}
-
-pub fn cdrskin_medium_track_info() -> io::Result<Vec<Track>> {
-    let output = cdrskin_medium_info_string()?;
-    let filtered = output
-        .lines()
-        .skip_while(|&x| !CDRSKIN_TRACKS_HEADER_REGEX.is_match(x))
-        .skip(2)
-        .take_while(|&x| !x.is_empty())
-        .collect::<Vec<_>>();
-    let mut tracks = Vec::new();
-    for x in filtered {
-        let _: Option<_> = try {
-            let captures = CDRSKIN_TRACK_CAPTURING_REGEX.captures_iter(x).next()?;
-            let track = Track {
-                track_no: captures.get(1)?.as_str().parse().unwrap(), /* the RegExp asserts it's a `\d` */
-                session_no: captures.get(2)?.as_str().parse().unwrap(),
-                start_addr: captures.get(3)?.as_str().parse().unwrap(),
-                end_addr: captures.get(4)?.as_str().parse().unwrap(),
-                size: captures.get(5)?.as_str().parse().unwrap(),
-            };
-            tracks.push(track);
-        };
-    }
-    Ok(tracks)
-}
-
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct SongInfo {
     name: String,
@@ -183,18 +140,6 @@ pub fn extract_meta_info(track: Track) -> io::Result<MetaInfo> {
         .collect::<io::Result<Vec<_>>>()?;
     let bytes = bytes.trim_ascii_end();
     serde_json::from_slice(bytes).map_err(io::Error::other)
-}
-
-pub fn check_cdrskin_version() -> io::Result<Option<String>> {
-    let output = execute_command_with_output(&["cdrskin", "--version"])?;
-    let version: Option<&str> = try {
-        CDRSKIN_VERSION_REGEX
-            .captures_iter(&output)
-            .next()?
-            .get(1)?
-            .as_str()
-    };
-    Ok(version.map(Into::into))
 }
 
 pub fn set_up_logging<P: AsRef<Path>>(file_path: P) -> anyhow::Result<()> {
