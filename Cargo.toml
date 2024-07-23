@@ -19,5 +19,5 @@ log = "0.4.22"
 fern = "0.6.2"
 humantime = "2.1.0"
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.17"
