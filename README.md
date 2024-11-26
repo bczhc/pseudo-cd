@@ -19,12 +19,12 @@ tools and methods. This process is called
 
 Modern DVDs (namely DVD-R) support multi-session, but there's
 no multi-track like on CDs. If we consider each session on a DVD,
-is equivalent to a track on a CD, then we can just "simulated"
+is equivalent to a track on a CD, then we are just "simulating"
 a music CD. Just store PCM data as sessions. This is why I call
 it a "pseudo CD". This project implements
-a simple music player for such a DVD format.
+a simple music player for such DVD format.
 
-I made this just for a little Rust programming practice.
+I made this just for fun and a little Rust programming practice.
 
 ## Format
 
