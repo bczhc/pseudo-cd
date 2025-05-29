@@ -1,6 +1,10 @@
 Pseudo-CD
 ====
 
+Simulates CD playing experience on a DVD.
+
+<img width="100%" alt="image" src="https://github.com/user-attachments/assets/a6317df1-65ae-4039-b865-7ed2d6bae724">
+
 ## Thoughts
 
 Audio tracks are stored digitally on a Compact Disc (CD), and precisely
@@ -129,10 +133,6 @@ Sess 2.
 
   <b>-h</b>, <b>--help</b>
           Print help (see a summary with &apos;-h&apos;)</pre>
-
-## Screenshot
-
-<img width="100%" alt="image" src="https://github.com/user-attachments/assets/a6317df1-65ae-4039-b865-7ed2d6bae724">
 
 ## TUI Key Bindings
 
